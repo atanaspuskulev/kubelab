@@ -63,7 +63,7 @@ done
 
 # Invalidate user options
 
-[[ $EUID eq 0 ]] || fail 'This script must be run as root/sudo'
+[[ $EUID -eq 0 ]] || fail 'This script must be run as root/sudo'
 [[ $ACTION == create || $ACTION == verify || $ACTION == delete ]] || { usage; exit 2; }
 [[ $BRIDGE =~ ^[a-zA-Z][a-zA-Z0-9_-]{0,14}$ ]] || fail 'Invalid bridge name; maximum of 15 characters allowed'
 [[ $BRIDGE != '.' && $BRIDGE != '..' ]] || fail 'Invalid bridge name'
@@ -93,7 +93,7 @@ read_state() {
     mapfile -t state < "$STATE_FILE"
 
     [[ ${#state[@]} -eq 4 ]] || fail 'Invalid state file'
-    [[ ${state[@] == "$BRIDGE" ]] || fail 'State bridge mismatch'
+    [[ ${state[@]} == "$BRIDGE" ]] || fail 'State bridge mismatch'
     COUNT=${state[1]}
     PREFIX=${state[2]}
     SUBNET=${state[3]}
@@ -118,7 +118,7 @@ except (ValueError,AssertionError):
     sys.exit(1)
 PY
 }
-s
+
 # Short deterministic host-side interface names;
 # hash avoids cross-lab collisions
 peer_name() {
@@ -158,6 +158,98 @@ rollback() {
     rm -f "$STATE_FILE"
     exit "${rc:-1}"
 }
+
+delete_network() {
+    local i ns peer
+    local -a remaining_peers=()
+    local -a remaining_ns=()
+
+    read_state
+
+    [[ "$COUNT" =~ ^[1-9][0-9]*$ ]] || fail 'Invalid namespaces count in state'
+    [[ "$PREFIX" =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]] || fail 'Invalid namespace prefix in state'
+
+    # Validate resources, before delete
+    if ip link show dev "$BRIDGE" &>/dev/null; then
+        [[ "$(ip -d -j link show dev "$BRIDGE" | 
+            jq -r '.[0].linkinfo.info_kind')" == "bridge" ]] || fail "BRIDGE $BRIDGE exists but is not a bridge"
+
+        # Reject interfaces attached to the bridge that we don't own
+        local actual_ports expected_ports
+
+        actual_ports="$(bridge link show master "$BRIDGE" | 
+            sed -nE 's/^[0-9]+: ([^:@]+).*/\1/p' | sort)"
+
+        expected_ports=""
+        for ((i=1; i<=COUNT; i++)); do
+            peer="$(peer_name "$i")"
+
+            if ip link show dev "$peer" &>/dev/null; then
+                expected_ports+="${peer}"$'\n'
+            fi
+        done
+
+        [[ "$actual_ports" == "$(printf '%s' "$expected_ports" | 
+            sed '/^$/d' | sort)" ]] || fail "Unexpected interface attached to BRIDGE $BRIDGE"
+    fi
+
+    for ((i=1; i<=COUNT; i++)); do
+        ns="$(ns_name "$i")"
+        peer="$(peer_name "$i")"
+
+        if ip netns list | awk '{print $1}' | grep -Fxq "$ns"; then
+            if ip -n "$ns" link show eth0 &>/dev/null; then
+                # Is eth0 a veth interface?
+                [[ "$(ip -n "$ns" -d -j link show dev eth0 | 
+                    jq -r '.[0].linkinfo.info_kind')" == "veth" ]] || fail "Interface eth0 in namespace $ns is not a veth"
+
+                # Check if host-side peer exists
+                ip link show dev "$peer" &>/dev/null || fail "Expected PEER $peer for namespace $ns is missing"
+
+                # Iface index of host-side peer
+                local peer_ifindex
+                peer_ifindex="$(ip -j link show dev "$peer" | jq -r '.[0].ifindex')"
+
+                # Peer iface index recorded by eth0
+                local eth0_peer_index
+                eth0_peer_index="$(ip -n "$ns" -j link show dev eth0 | jq -r '.[0].link_index')"
+
+                [[ "$eth0_peer_index" == "$peer_ifindex" ]] || fail "Interface eth0 in namespace $ns is not connected to $peer"
+            fi
+            remaining_ns+=("$ns")
+        fi
+
+        if ip link show dev "$peer" &>/dev/null; then
+            [[ "$(ip -d -j link show dev "$peer" | 
+                jq -r '.[0].linkinfo.info_kind')" == "veth" ]] || fail "PEER $peer exists, but is not a veth"
+
+            [[ -n "$BRIDGE" ]] || fail "Bridge name is empty"
+
+            remaining_peers+=("$peer")
+        fi
+    done
+
+    # Remove remaining resources
+    for peer in "${remaining_peers[@]}"; do
+        echo "Deleting veth: $peer"
+        ip link delete dev "$peer"
+    done
+
+    for ns in "${remaining_ns[@]}"; do
+        echo "Deleting namespace: $ns"
+        ip netns delete "$ns"
+    done
+
+    if ip link show dev "$BRIDGE" &>/dev/null; then
+        echo "Deleting bridge: $BRIDGE"
+        ip link delete dev "$BRIDGE"
+    fi
+
+    rm -- "$STATE_FILE"
+
+    echo "Network lab deleted successfully"
+}
+
 
 case "$ACTION" in
     create)
@@ -219,6 +311,8 @@ PY
     verify)
         [[ -z $COUNT && -z $PREFIX && -z $SUBNET ]] || fail 'verify only accepts --bridge'
 
+        read_state
+
         for ((i=1; i<=COUNT; i++)); do
             ns=$(ns_name "$i")
             peer=$(peer_name "$i")
@@ -242,33 +336,7 @@ PY
 
     delete)
         [[ -z $COUNT && -z $PREFIX && -z $SUBNET ]] || fail 'delete only accepts --bridge'
-        read_state
 
-        for ((i=1; i<=COUNT; i++)); do
-            ns=$(ns_name "$i")
-            peer=$(peer_name "$i")
-            
-            # Refuse destructive cleanup, when ownership 
-            # has become ambigious
-            if ip link show dev "$peer" &>/dev/null; then
-                [[ $(bridge link show dev "$peer") == *"master $BRIDGE"* ]] || fail "Unexpected ownership for $peer"
-            fi
-
-            if ip netns list | awk '{print $1}' | grep -Fxq "$ns"; then
-                ip -n "$ns" link show eth0 >/dev/null || fail "Unexpected namespace state: $ns"
-            fi
-        done
-
-        for ((i=1; i<=COUNT; i++)); do
-            ns=$(ns_name "$i")
-            peer=$(peer_name "$i")
-            
-            ip netns del "$ns" 2>/dev/null || fail "WARNING: could not delete NS $ns" >&2
-            ip link del "$peer" 2>/dev/null || true
-        done
-
-        ip link del "$BRIDGE"
-        rm -f "$STATE_FILE"
-        echo "Deleted managed lab $BRIDGE"
+        delete_network
         ;;
 esac
