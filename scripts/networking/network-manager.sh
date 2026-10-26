@@ -93,7 +93,7 @@ read_state() {
     mapfile -t state < "$STATE_FILE"
 
     [[ ${#state[@]} -eq 4 ]] || fail 'Invalid state file'
-    [[ ${state[@]} == "$BRIDGE" ]] || fail 'State bridge mismatch'
+    [[ ${state[0]} == "$BRIDGE" ]] || fail 'State bridge mismatch'
     COUNT=${state[1]}
     PREFIX=${state[2]}
     SUBNET=${state[3]}
@@ -140,7 +140,7 @@ created_bridges=0
 rollback() {
     local rc=$?
 
-    trap - ERR INT TERM
+    trap - ERR INT TERM EXIT
     echo 'Creation failed; cleaning up resources for this attempt...' >&2
     
     for ns in "${created_ns[@]}"; do
@@ -161,26 +161,36 @@ rollback() {
 
 delete_network() {
     local i ns peer
+    local bridge_ifindex=''
+    local actual_ports expected_ports
+    local peer_ifindex eth0_peer_index
     local -a remaining_peers=()
     local -a remaining_ns=()
 
     read_state
 
-    [[ "$COUNT" =~ ^[1-9][0-9]*$ ]] || fail 'Invalid namespaces count in state'
-    [[ "$PREFIX" =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]] || fail 'Invalid namespace prefix in state'
+    # --------------------------------------------------
+    # Phase 1: Validate bridge and attached interfaces
+    # --------------------------------------------------
 
-    # Validate resources, before delete
     if ip link show dev "$BRIDGE" &>/dev/null; then
-        [[ "$(ip -d -j link show dev "$BRIDGE" | 
-            jq -r '.[0].linkinfo.info_kind')" == "bridge" ]] || fail "BRIDGE $BRIDGE exists but is not a bridge"
 
-        # Reject interfaces attached to the bridge that we don't own
-        local actual_ports expected_ports
+        # Verify that the interface is a Linux bridge
+        [[ "$(ip -d -j link show dev "$BRIDGE" |
+            jq -r '.[0].linkinfo.info_kind')" == "bridge" ]] ||
+            fail "$BRIDGE exists but is not a bridge"
 
-        actual_ports="$(bridge link show master "$BRIDGE" | 
-            sed -nE 's/^[0-9]+: ([^:@]+).*/\1/p' | sort)"
+        bridge_ifindex="$(ip -j link show dev "$BRIDGE" |
+            jq -r '.[0].ifindex')"
 
+        # Collect actual bridge ports
+        actual_ports="$(bridge link show master "$BRIDGE" |
+            sed -nE 's/^[0-9]+: ([^:@]+).*/\1/p' |
+            sort)"
+
+        # Collect expected ports that still exist
         expected_ports=""
+
         for ((i=1; i<=COUNT; i++)); do
             peer="$(peer_name "$i")"
 
@@ -189,47 +199,90 @@ delete_network() {
             fi
         done
 
-        [[ "$actual_ports" == "$(printf '%s' "$expected_ports" | 
-            sed '/^$/d' | sort)" ]] || fail "Unexpected interface attached to BRIDGE $BRIDGE"
+        # Refuse deletion if unexpected ports are attached
+        # or expected ports are missing from this bridge.
+        [[ "$actual_ports" == "$(printf '%s' "$expected_ports" |
+            sed '/^$/d' |
+            sort)" ]] ||
+            fail "Unexpected or missing interfaces on bridge $BRIDGE"
     fi
+
+    # --------------------------------------------------
+    # Phase 2: Validate namespaces and veth ownership
+    # --------------------------------------------------
 
     for ((i=1; i<=COUNT; i++)); do
         ns="$(ns_name "$i")"
         peer="$(peer_name "$i")"
 
         if ip netns list | awk '{print $1}' | grep -Fxq "$ns"; then
-            if ip -n "$ns" link show eth0 &>/dev/null; then
-                # Is eth0 a veth interface?
-                [[ "$(ip -n "$ns" -d -j link show dev eth0 | 
-                    jq -r '.[0].linkinfo.info_kind')" == "veth" ]] || fail "Interface eth0 in namespace $ns is not a veth"
 
-                # Check if host-side peer exists
-                ip link show dev "$peer" &>/dev/null || fail "Expected PEER $peer for namespace $ns is missing"
+            # Refuse to delete a namespace containing
+            # unexpected interfaces.
+            local iface
+            while IFS= read -r iface; do
+                [[ "$iface" == "lo" || "$iface" == "eth0" ]] ||
+                    fail "Unexpected interface $iface in namespace $ns"
+            done < <(
+                ip -n "$ns" -j link show |
+                    jq -r '.[].ifname'
+            )
 
-                # Iface index of host-side peer
-                local peer_ifindex
-                peer_ifindex="$(ip -j link show dev "$peer" | jq -r '.[0].ifindex')"
+            if ip -n "$ns" link show dev eth0 &>/dev/null; then
 
-                # Peer iface index recorded by eth0
-                local eth0_peer_index
-                eth0_peer_index="$(ip -n "$ns" -j link show dev eth0 | jq -r '.[0].link_index')"
+                # Verify eth0 is a veth
+                [[ "$(ip -n "$ns" -d -j link show dev eth0 |
+                    jq -r '.[0].linkinfo.info_kind')" == "veth" ]] ||
+                    fail "Interface eth0 in $ns is not a veth"
 
-                [[ "$eth0_peer_index" == "$peer_ifindex" ]] || fail "Interface eth0 in namespace $ns is not connected to $peer"
+                # Verify the expected host-side peer exists
+                ip link show dev "$peer" &>/dev/null ||
+                    fail "Expected peer $peer for namespace $ns is missing"
+
+                # Compare the actual veth peer relationship
+                peer_ifindex="$(ip -j link show dev "$peer" |
+                    jq -r '.[0].ifindex')"
+
+                eth0_peer_index="$(ip -n "$ns" -j link show dev eth0 |
+                    jq -r '.[0].link_index')"
+
+                [[ "$eth0_peer_index" == "$peer_ifindex" ]] ||
+                    fail "eth0 in namespace $ns is not connected to $peer"
+            else
+                # A namespace with no eth0 is allowed only
+                # when its expected host-side peer is also absent.
+                ! ip link show dev "$peer" &>/dev/null ||
+                    fail "Namespace $ns has no eth0 but peer $peer exists"
             fi
+
             remaining_ns+=("$ns")
         fi
 
         if ip link show dev "$peer" &>/dev/null; then
-            [[ "$(ip -d -j link show dev "$peer" | 
-                jq -r '.[0].linkinfo.info_kind')" == "veth" ]] || fail "PEER $peer exists, but is not a veth"
 
-            [[ -n "$BRIDGE" ]] || fail "Bridge name is empty"
+            # Verify the host interface is a veth
+            [[ "$(ip -d -j link show dev "$peer" |
+                jq -r '.[0].linkinfo.info_kind')" == "veth" ]] ||
+                fail "Peer $peer exists but is not a veth"
+
+            # Refuse deletion when bridge ownership
+            # cannot be established.
+            [[ -n "$bridge_ifindex" ]] ||
+                fail "Cannot verify ownership of $peer: bridge $BRIDGE is missing"
+
+            # Verify this peer belongs to our bridge
+            [[ "$(ip -j link show dev "$peer" |
+                jq -r '.[0].master // empty')" == "$bridge_ifindex" ]] ||
+                fail "Peer $peer is not attached to bridge $BRIDGE"
 
             remaining_peers+=("$peer")
         fi
     done
 
-    # Remove remaining resources
+    # --------------------------------------------------
+    # Phase 3: Delete validated resources
+    # --------------------------------------------------
+
     for peer in "${remaining_peers[@]}"; do
         echo "Deleting veth: $peer"
         ip link delete dev "$peer"
@@ -245,11 +298,11 @@ delete_network() {
         ip link delete dev "$BRIDGE"
     fi
 
+    # Only remove state after successful cleanup
     rm -- "$STATE_FILE"
 
     echo "Network lab deleted successfully"
 }
-
 
 case "$ACTION" in
     create)
