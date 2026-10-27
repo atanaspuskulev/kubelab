@@ -130,3 +130,9 @@ where <name> is the name of the bridged network.
 2. Capture packet exchange for a namespace routing (ICMP)
 
 `sudo ip netns exec <namespace> tcpdump -ni r2 icmp`
+
+3. Capture traffic to/from an IP
+`tcpdump -ni eth0 host 10.10.1.2`
+
+4. Capture ICMP traffic
+`tcpdump -ni eth0 icmp`
