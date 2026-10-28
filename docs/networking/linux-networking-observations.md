@@ -121,6 +121,10 @@ where <name> is the name of the bridged network.
 
 `ip link delete <name> type bridge`
 
+8. Monitor bridge forwarding database
+
+`bridge monitor fdb`
+
 ## Various
 
 1. Check ipv4 (is enabled via sysctl) for a namespace
@@ -136,3 +140,45 @@ where <name> is the name of the bridged network.
 
 4. Capture ICMP traffic
 `tcpdump -ni eth0 icmp`
+
+5. Inspect bridge forwarding database
+
+`bridge fbd show br <bridge-name>`
+
+## In Docker
+
+1. Inspect Docker network
+
+`docker exec <container-name-or-id> ip link show eth0`
+
+2. Ping one docker machine from another using container name
+
+`docker exec <container-1> ping <container-2>`
+
+3. Delete a forwarding db entry (bridge, apply on all topics)
+
+First, you have to identify the entry you want to delete, e.g, let's say we want to delete the master network 
+of a container:
+
+`docker exec <container-name> ip link show eth0i`
+
+You can get something like:
+
+```
+2: eth0@if25: <BROADCAST,MULTICAST,UP,LOWER_UP,M-DOWN> mtu 1500 qdisc noqueue
+    link/ether 8e:6c:77:d4:5a:00 brd ff:ff:ff:ff:ff:ff
+```
+
+We are interested in the MAC address: 8e:6c:77:d4:5a:00
+
+Before continue, we have to obtain our bridge id:
+
+`bridge link show`
+
+Remove the desired bridge (by MAC address) from the forwarding database:
+
+`bridge fdb del <MAC> dev <dev> master`
+
+Note, that <dev> is the device id from bridge link show indetifying.
+
+
