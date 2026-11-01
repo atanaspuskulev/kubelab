@@ -1,0 +1,22 @@
+---
+- name: Install virtualization packages
+  ansible.builtin.apt:
+    name:
+      - qemu-system-x86
+      - libvirt-daemon-system
+      - libvirt-clients
+      - virtinst
+      - cloud-image-utils
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Verify libvirt system connection
+  ansible.builtin.command:
+    cmd: virsh -c qemu:///system list --all
+  register: virsh_result
+  changed_when: false
+
+- name: Show libvirt verification
+  ansible.builtin.debug:
+    var: virsh_result.stdout_lines

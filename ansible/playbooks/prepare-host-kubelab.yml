@@ -1,0 +1,11 @@
+---
+- name: Validate host prerequisites
+  ansible.builtin.import_playbook: preflight-kubelab.yml
+
+- name: Prepare kubelab hypervisor
+  hosts: hypervisors
+  become: true
+  gather_facts: true
+
+  roles:
+    - kubelab-virt

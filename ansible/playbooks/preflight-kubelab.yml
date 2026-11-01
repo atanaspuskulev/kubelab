@@ -1,0 +1,47 @@
+---
+- name: Validate kubelab hypervisor prerequisites
+  hosts: hypervisors
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Verify OS and archiitecture
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['system'] == 'Linux'
+          - ansible_facts['architecture'] == 'x86_64'
+        fail_msg: "Unsupported OS or architecture"
+        success_msg: "OS and architecture verified"
+
+    - name: Check KVM dev
+      ansible.builtin.stat:
+        path: /dev/kvm
+      register: kvm_device
+
+    - name: Verify KVM device exists
+      ansible.builtin.assert:
+        that:
+          - kvm_device.stat.exists
+          - kvm_device.stat.ischr
+        fail_msg: "/dev/kvm is missing or is not a character device"
+        success_msg: "/dev/kvm is available!"
+
+    - name: Inspect LVM volume groups
+      ansible.builtin.command:
+        cmd: vgs --reportformat json --units b --nosuffix
+      register: vg
+      changed_when: false
+
+    - name: Parse LVM report
+      ansible.builtin.set_fact:
+        lvm_report: "{{ vg.stdout | from_json }}"
+
+    - name: Verify ubuntu-vg exists
+      ansible.builtin.assert:
+        that:
+          - "'ubuntu-vg' in (lvm_report.report[0].vg | map(attribute='vg_name') | list)"
+        fail_msg: "Volume group ubuntu-vg was not found"
+    
+    - name: Show LVM volume groups
+      ansible.builtin.debug:
+        var: lvm_report.report[0].vg
