@@ -1,0 +1,117 @@
+---
+- name: Check if VM storage Logical Volume (LV) exists
+  ansible.builtin.command:
+    cmd: lvs --noheadings -o lv_name ubuntu-vg
+  register: lv
+  changed_when: false
+  check_mode: false
+
+- name: Display existing LV group
+  ansible.builtin.debug:
+    var: lv.stdout_lines
+
+- name: Check available VG space
+  ansible.builtin.command:
+    cmd: vgs ubuntu-vg --noheadings -o vg_free --units b --nosuffix
+  register: vg_free
+  changed_when: false
+  check_mode: false
+
+- name: Debug raw VG free space
+  ansible.builtin.debug:
+    msg:
+      - "Raw value: {{ vg_free.stdout }}"
+      - "Parsed bytes: {{ vg_free.stdout | trim | regex_replace('^[<>]', '') | int }}"
+      - "Required bytes: {{ 300 * 1024 * 1024 * 1024 }}"
+
+- name: Display available storage
+  ansible.builtin.debug:
+    msg: "Available LVM space: {{ vg_free.stdout | trim }} GiB"
+
+- name: Check if VM storage exists
+  ansible.builtin.set_fact:
+    vm_storage_exists: >-
+      {{ 'vm-storage' in (lv.stdout_lines | map('trim') | list) }}
+
+- name: Parse available VG bytes
+  ansible.builtin.set_fact:
+    vg_free_bytes: >-
+      {{ vg_free.stdout | trim | regex_replace('^[<>]', '') | int }}
+
+- name: Inspect storage calculation
+  ansible.builtin.debug:
+    msg:
+      - "Raw: {{ vg_free.stdout | to_json }}"
+      - "Free bytes: {{ vg_free_bytes }}"
+      - "Free bytes type: {{ vg_free_bytes | type_debug }}"
+      - "Required bytes: {{ 300 * 1024**3 }}"
+      - "Enough: {{ (vg_free_bytes | int) >= (300 * 1024**3) }}"
+
+- name: Verify sufficient free space
+  ansible.builtin.assert:
+    that:
+      - (vg_free_bytes | int) >= (300 * 1024**3)
+    fail_msg: "Insufficient free space in ubuntu-vg"
+    success_msg: "Sufficient free space verified"
+  when: not vm_storage_exists
+
+- name: Create new VM storage LV
+  community.general.lvol:
+    vg: ubuntu-vg
+    lv: vm-storage
+    size: 300g
+    state: present
+    shrink: false
+  when: not vm_storage_exists
+
+- name: Create ext4 filesystem for VM storage
+  community.general.filesystem:
+    fstype: ext4
+    dev: /dev/ubuntu-vg/vm-storage
+    state: present
+    force: false
+
+- name: Get VM storage FS UUID
+  ansible.builtin.command:
+    cmd: blkid -s UUID -o value  /dev/ubuntu-vg/vm-storage
+  register: vm_storage_uuid
+  changed_when: false
+  check_mode: false
+
+- name: Verify VM Storage UUID
+  ansible.builtin.assert:
+    that:
+      - vm_storage_uuid.stdout | trim | length > 0
+    fail_msg: "Cannot determine VM FS UUID"
+
+- name: Create libvirt images directory
+  ansible.builtin.file:
+    path: /var/lib/libvirt/images
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Safeguard; check existing mount at VM storage path
+  ansible.builtin.command:
+    cmd: findmnt -n -o SOURCE --target /var/lib/libvirt/image --mountpoint
+  register: existing_mount
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Prevent mounting over another FS
+  ansible.builtin.assert:
+    that:
+      - existing_mount.rc == 1 or 
+        (existing_mount.rc == 0 and 
+         existing_mount.stdout | trim == '/dev/mapper/ubuntu--vg-vm--storage')
+    fail_msg: "Another filesystem is already mounted at VM storage path"
+
+- name: Mount VM storage
+  ansible.posix.mount:
+    path: /var/lib/libvirt/images
+    src: "UUID={{ vm_storage_uuid.stdout | trim }}"
+    fstype: ext4
+    opts: defaults
+    state: mounted

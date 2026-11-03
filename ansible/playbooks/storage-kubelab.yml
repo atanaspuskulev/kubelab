@@ -1,0 +1,8 @@
+---
+- name: Inspect kubelab storage
+  hosts: hypervisors
+  become: true
+  gather_facts: false
+
+  roles:
+    - kubelab-storage

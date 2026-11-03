@@ -1,0 +1,16 @@
+---
+- name: Destroy kubelab VM storage
+  hosts: hypervisors
+  become: true
+
+  pre_tasks:
+    - name: Require explicit deletion confirmation
+      ansible.builtin.assert:
+        that:
+          - confirm_storage_destroy | default(false) | bool
+        fail_msg: >-
+          Storage deletion blocked.
+          Pass -e confirm_storage_destroy=true to proceed.
+
+  roles:
+    - kubelab-stoorage-destroy
