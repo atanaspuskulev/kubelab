@@ -1,0 +1,45 @@
+---
+- name: Activate default libvirt network
+  community.libvirt.virt_net:
+    name: default
+    state: active
+    uri: qemu:///system
+
+- name: Enable default libvirt network autostart
+  community.libvirt.virt_net:
+    name: default
+    autostart: true
+    uri: qemu:///system
+
+- name: Inspect default libvirt network
+  ansible.builtin.command:
+    cmd: virsh -c qemu:///system net-info default
+  register: network_info
+  changed_when: false
+
+- name: Default network
+  ansible.builtin.debug:
+    var: network_info.stdout_lines
+
+- name: Define Kubernetes virtual network
+  community.libvirt.virt_net:
+    name: "{{ item.name }}"
+    command: define
+    xml: "{{ lookup('ansible.builtin.template', 'network.xml.j2') }}"
+    uri: qemu:///system
+  loop: "{{ kubelab_networks }}"
+
+- name: Activate Kubernetes Virtual Network
+  community.libvirt.virt_net:
+    name: "{{ item.name }}"
+    state: active
+    uri: qemu:///system
+  loop: "{{ kubelab_networks }}"
+
+- name: Enable Kubernetes network autostart
+  community.libvirt.virt_net:
+    name: "{{ item.name }}"
+    autostart: true
+    uri: qemu:///system
+  loop: "{{ kubelab_networks }}"
+

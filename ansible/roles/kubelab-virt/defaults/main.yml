@@ -1,0 +1,9 @@
+---
+kubelab_networks:
+  - name: k3s-lab
+    bridge: virtbr-k3s
+    mode: nat
+    gateway: 10.20.0.1
+    netmask: 255.255.255.0
+    dhcp_start: 10.20.0.100
+    dhcp_end: 10.20.0.200

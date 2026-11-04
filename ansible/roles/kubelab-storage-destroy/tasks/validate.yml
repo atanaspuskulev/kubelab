@@ -12,6 +12,16 @@
       Unexpected error while discovering ubuntu-vg/vm-storage:
       {{ existing_lv.stderr | default('unknown') }}
 
+- name: Verify no storage references remain when LV is absent
+  ansible.builtin.assert:
+    that:
+      - libvirt_mount_result.rc == 1
+      - fstab_entry.rc == 1
+    fail_msg: >-
+      VM storage LV is absent, but mount or fstab references remain.
+      Manual inspection required.
+  when: not vm_storage_exists
+
 - name: Check if the FS type is actually ext4 that we need to destroy
   ansible.builtin.assert:
     that:
@@ -29,7 +39,6 @@
     fail_msg: >-
       Unexpected error while querying VM storage inside fstab entries:
       {{ fstab_entry.stderr | default('unknown') }}
-  when: vm_storage_exists
 
 - name: Assert that fstab UUID and block device UUID are actually the same
   ansible.builtin.assert:
@@ -54,7 +63,6 @@
     fail_msg: >-
       Unexpected error while checking the active mount:
       {{ libvirt_mount_result.stderr | default('unknown') }}
-  when: vm_storage_exists
 
 - name: Verify active mount belongs to the actual VM storage
   ansible.builtin.assert:
@@ -75,6 +83,7 @@
     msg:
       - "VMs: {{ libvirt_vms.stdout_lines }}"
       - "Pools: {{ libvirt_pools.stdout_lines }}"
+  when: vm_storage_exists
 
 - name: Block storage destruction, while libvirt resources exists
   ansible.builtin.assert:
@@ -86,44 +95,6 @@
       Their cleanup must be completed before removing VM storage.
     success_msg: "No libvirt dependencies detected."
   when: vm_storage_exists
-
-- name: Unmount VM storage
-  ansible.posix.mount:
-    path: /var/lib/libvirt/images
-    state: unmounted
-  when:
-    - vm_storage_exists
-    - not ansible_check_mode
-
-- name: Remove VM storage from fstab
-  ansible.posix.mount:
-    path: /var/lib/libvirt/images
-    state: absent_from_fstab
-  when:
-    - vm_storage_exists
-    - not ansible_check_mode
-
-- name: Assert unmounted VM storage
-  ansible.builtin.assert:
-    that:
-      - verify_unmount.rc == 1
-    fail_msg: >-
-      VM storage is still mounted.
-      Abort remove LVM.
-  when:
-    - vm_storage_exists
-    - not ansible_check_mode
-
-- name: Assert removed VM fstab entry
-  ansible.builtin.assert:
-    that:
-      - unmounted_fstab.rc == 1
-    fail_msg: >-
-      VM storage still exists in /etc/fstab.
-      Abort remove LVM.
-  when:
-    - vm_storage_exists
-    - not ansible_check_mode
 
 - name: Confirm destruction
   ansible.builtin.assert:

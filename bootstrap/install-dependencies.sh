@@ -14,3 +14,7 @@ ansible-galaxy collection install community.general
 
 # Needed by parsing the fstab, creating fs
 ansible-galaxy collection install ansible.posix
+
+# Request libvirt for Ansible
+ansible-galaxy collection install community.libvirt
+

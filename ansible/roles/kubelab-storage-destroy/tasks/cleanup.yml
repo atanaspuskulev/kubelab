@@ -1,0 +1,79 @@
+---
+- name: Confirm storage destruction
+  ansible.builtin.assert:
+    that:
+      - confirm_storage_destroy | default(false) | bool
+    fail_msg: "Storage destruction was not explicitly confirmed"
+
+- name: Unmount VM storage
+  ansible.posix.mount:
+    path: /var/lib/libvirt/images
+    state: unmounted
+  when:
+    - vm_storage_exists
+    - not ansible_check_mode
+
+- name: Remove VM storage from fstab
+  ansible.posix.mount:
+    path: /var/lib/libvirt/images
+    state: absent_from_fstab
+  when:
+    - vm_storage_exists
+    - not ansible_check_mode
+
+- name: Verify VM storage is unmounted
+  ansible.builtin.command:
+    cmd: findmnt -n --mountpoint /var/lib/libvirt/images
+  register: verify_unmount
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - vm_storage_exists
+    - not ansible_check_mode
+
+- name: Assert unmounted VM storage
+  ansible.builtin.assert:
+    that:
+      - verify_unmount.rc == 1
+    fail_msg: >-
+      VM storage is still mounted.
+      Abort remove LVM.
+  when:
+    - vm_storage_exists
+    - not ansible_check_mode
+
+
+- name: Verify VM fstab entry is gone
+  ansible.builtin.command:
+    cmd: findmnt --fstab -n --mountpoint /var/lib/libvirt/images
+  register: unmounted_fstab
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - vm_storage_exists
+    - not ansible_check_mode
+
+
+- name: Assert removed VM fstab entry
+  ansible.builtin.assert:
+    that:
+      - unmounted_fstab.rc == 1
+    fail_msg: >-
+      VM storage still exists in /etc/fstab.
+      Abort remove LVM.
+  when:
+    - vm_storage_exists
+    - not ansible_check_mode
+
+
+- name: Remove VM storage logical volume
+  community.general.lvol:
+    vg: ubuntu-vg
+    lv: vm-storage
+    state: absent
+    force: true
+  when:
+    - vm_storage_exists
+    - not ansible_check_mode

@@ -27,7 +27,6 @@
   changed_when: false
   check_mode: false
   failed_when: false
-  when: vm_storage_exists
 
 - name: Gets actual device UUID
   ansible.builtin.command:
@@ -45,7 +44,6 @@
   changed_when: false
   check_mode: false
   failed_when: false
-  when: vm_storage_exists
 
 - name: Discover libvirt virtual machines
   ansible.builtin.command:
@@ -63,25 +61,4 @@
   check_mode: false
   when: vm_storage_exists
 
-- name: Verify VM storage is unmounted
-  ansible.builtin.command:
-    cmd: findmnt -n --mountpoint /var/lib/libvirt/images
-  register: verify_unmount
-  changed_when: false
-  failed_when: false
-  check_mode: false
-  when:
-    - vm_storage_exists
-    - not ansible_check_mode
-
-- name: Verify VM fstab entry is gone
-  ansible.builtin.command:
-    cmd: findmnt --fstab -n --mountpoint /var/lib/libvirt/images
-  register: unmounted_fstab
-  changed_when: false
-  failed_when: false
-  check_mode: false
-  when:
-    - vm_storage_exists
-    - not ansible_check_mode
 
