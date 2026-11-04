@@ -1,0 +1,87 @@
+---
+- name: Check if VM storage exists
+  ansible.builtin.command:
+    cmd: lvs --noheadings -o lv_name ubuntu-vg/vm-storage
+  register: existing_lv
+  changed_when: false
+  check_mode: false
+  failed_when: false
+
+- name: Set VM storage existing flag
+  ansible.builtin.set_fact:
+    vm_storage_exists: "{{ existing_lv.rc == 0 }}"
+
+- name: Extract the FS type from the mounted volume
+  ansible.builtin.command:
+    cmd: blkid -s TYPE -o value /dev/ubuntu-vg/vm-storage
+  register: found_fs_type
+  changed_when: false
+  check_mode: false
+  failed_when: false
+  when: vm_storage_exists
+
+- name: Gets the fstab entry about the mounted images store
+  ansible.builtin.command:
+    cmd: findmnt --fstab -n -o SOURCE --mountpoint /var/lib/libvirt/images
+  register: fstab_entry
+  changed_when: false
+  check_mode: false
+  failed_when: false
+  when: vm_storage_exists
+
+- name: Gets actual device UUID
+  ansible.builtin.command:
+    cmd: blkid -s UUID -o value /dev/ubuntu-vg/vm-storage
+  register: dev_uuid
+  changed_when: false
+  check_mode: false
+  failed_when: false
+  when: vm_storage_exists
+
+- name: Gets the active mount UUID
+  ansible.builtin.command:
+    cmd: findmnt -n -o UUID --mountpoint /var/lib/libvirt/images
+  register: libvirt_mount_result
+  changed_when: false
+  check_mode: false
+  failed_when: false
+  when: vm_storage_exists
+
+- name: Discover libvirt virtual machines
+  ansible.builtin.command:
+    cmd: virsh -c qemu:///system list --all --name
+  register: libvirt_vms
+  changed_when: false
+  check_mode: false
+  when: vm_storage_exists
+
+- name: Discover libvirt storage pools
+  ansible.builtin.command:
+    cmd: virsh -c qemu:///system pool-list --all --name
+  register: libvirt_pools
+  changed_when: false
+  check_mode: false
+  when: vm_storage_exists
+
+- name: Verify VM storage is unmounted
+  ansible.builtin.command:
+    cmd: findmnt -n --mountpoint /var/lib/libvirt/images
+  register: verify_unmount
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - vm_storage_exists
+    - not ansible_check_mode
+
+- name: Verify VM fstab entry is gone
+  ansible.builtin.command:
+    cmd: findmnt --fstab -n --mountpoint /var/lib/libvirt/images
+  register: unmounted_fstab
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - vm_storage_exists
+    - not ansible_check_mode
+

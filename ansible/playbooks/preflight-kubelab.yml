@@ -31,6 +31,7 @@
         cmd: vgs --reportformat json --units b --nosuffix
       register: vg
       changed_when: false
+      check_mode: false
 
     - name: Parse LVM report
       ansible.builtin.set_fact:

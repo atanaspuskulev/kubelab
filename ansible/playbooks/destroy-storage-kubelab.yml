@@ -13,4 +13,4 @@
           Pass -e confirm_storage_destroy=true to proceed.
 
   roles:
-    - kubelab-stoorage-destroy
+    - kubelab-storage-destroy

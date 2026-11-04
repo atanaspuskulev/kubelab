@@ -1,23 +1,9 @@
 ---
-- name: Check if VM storage exists
-  ansible.builtin.command:
-    cmd: lvs --noheadings -o lv_name ubuntu-vg/vm-storage
-  register: existing_lv
-  changed_when: false
-  check_mode: false
+- name: Discover storage
+  ansible.builtin.import_tasks: discovery.yml
 
-- name: Extract the FS type from the mounted volume
-  ansible.builtin.command:
-    cmd: blkid -s TYPE -o value /dev/ubuntu-vg/vm-storage
-  register: found_fs_type
-  changed_when: false
-  check_mode: false
-  when: existing_lv
+- name: Validate current discovery
+  ansible.builtin.import_tasks: validate.yml
 
-- name: Check if the FS type is actually ext4 that we need to destroy
-  ansible.builtin.assert:
-    that:
-      - found_fs_type == "ext4"
-    fail_msg: "Found {{ found_fs_type }}; ext4 expected. Abort!"
-    when: existing_lv
-
+- name: Cleanup storage
+  ansible.builtin.import_tasks: cleanup.yml

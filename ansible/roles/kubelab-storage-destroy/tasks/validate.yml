@@ -1,0 +1,137 @@
+---
+- name: Validate LV discovery result
+  ansible.builtin.assert:
+    that:
+      - >-
+        vm_storage_exists or 
+        (
+          existing_lv.rc == 5 and 
+          'Failed to find logical volume' in existing_lv.stderr
+        )
+    fail_msg: >-
+      Unexpected error while discovering ubuntu-vg/vm-storage:
+      {{ existing_lv.stderr | default('unknown') }}
+
+- name: Check if the FS type is actually ext4 that we need to destroy
+  ansible.builtin.assert:
+    that:
+      - found_fs_type.rc == 0
+      - (found_fs_type.stdout | trim) == 'ext4'
+    fail_msg: >- 
+      Found {{ found_fs_type.stdout | default('unknown') | trim }}; 
+      ext4 expected. Abort!
+  when: vm_storage_exists
+
+- name: Verify fstab discovery result
+  ansible.builtin.assert:
+    that:
+      - fstab_entry.rc in [0, 1]
+    fail_msg: >-
+      Unexpected error while querying VM storage inside fstab entries:
+      {{ fstab_entry.stderr | default('unknown') }}
+  when: vm_storage_exists
+
+- name: Assert that fstab UUID and block device UUID are actually the same
+  ansible.builtin.assert:
+    that:
+      - dev_uuid.rc == 0
+      - (dev_uuid.stdout | trim | length) > 0
+      - fstab_entry.rc == 0
+      - (fstab_entry.stdout | trim) == ('UUID=' ~ (dev_uuid.stdout | trim))
+    fail_msg: >-
+      Fstab entry UUID {{ (fstab_entry.stdout | default('unknown') | trim) }} 
+      does not match with found block device 
+      UUID {{ (dev_uuid.stdout | default('unknown') | trim) }}.
+      Destruction abort.
+  when: 
+    - vm_storage_exists
+    - fstab_entry.rc == 0
+
+- name: Validate active mount discovery
+  ansible.builtin.assert:
+    that:
+      - libvirt_mount_result.rc in [0, 1]
+    fail_msg: >-
+      Unexpected error while checking the active mount:
+      {{ libvirt_mount_result.stderr | default('unknown') }}
+  when: vm_storage_exists
+
+- name: Verify active mount belongs to the actual VM storage
+  ansible.builtin.assert:
+    that:
+      - libvirt_mount_result.rc == 0
+      - (libvirt_mount_result.stdout | trim) == (dev_uuid.stdout | trim)
+    fail_msg: >-
+      The filesystem mounted at /var/lib/libvirt/images does not match 
+      the expected VM storage UUID.
+      Destruction aborted.
+    success_msg: "Active mount UUID matches VM storage UUID"
+  when: 
+    - vm_storage_exists
+    - libvirt_mount_result.rc == 0
+
+- name: libvirt resources
+  ansible.builtin.debug:
+    msg:
+      - "VMs: {{ libvirt_vms.stdout_lines }}"
+      - "Pools: {{ libvirt_pools.stdout_lines }}"
+
+- name: Block storage destruction, while libvirt resources exists
+  ansible.builtin.assert:
+    that:
+      - (libvirt_vms.stdout_lines | length) == 0
+      - (libvirt_pools.stdout_lines | length) == 0
+    fail_msg: >-
+      Libvirt VM and storage pools exists.
+      Their cleanup must be completed before removing VM storage.
+    success_msg: "No libvirt dependencies detected."
+  when: vm_storage_exists
+
+- name: Unmount VM storage
+  ansible.posix.mount:
+    path: /var/lib/libvirt/images
+    state: unmounted
+  when:
+    - vm_storage_exists
+    - not ansible_check_mode
+
+- name: Remove VM storage from fstab
+  ansible.posix.mount:
+    path: /var/lib/libvirt/images
+    state: absent_from_fstab
+  when:
+    - vm_storage_exists
+    - not ansible_check_mode
+
+- name: Assert unmounted VM storage
+  ansible.builtin.assert:
+    that:
+      - verify_unmount.rc == 1
+    fail_msg: >-
+      VM storage is still mounted.
+      Abort remove LVM.
+  when:
+    - vm_storage_exists
+    - not ansible_check_mode
+
+- name: Assert removed VM fstab entry
+  ansible.builtin.assert:
+    that:
+      - unmounted_fstab.rc == 1
+    fail_msg: >-
+      VM storage still exists in /etc/fstab.
+      Abort remove LVM.
+  when:
+    - vm_storage_exists
+    - not ansible_check_mode
+
+- name: Confirm destruction
+  ansible.builtin.assert:
+    that:
+      - confirm_storage_destroy | default(false) | bool
+      - not ansible_check_mode
+    fail_msg: >-
+      Storage destruction requires explicit confirmation 
+      and exectuion without --check option.
+  when: not ansible_check_mode
+
