@@ -1,0 +1,7 @@
+---
+- name: Provision Virtual Machines for Kubernetes
+  hosts: hypervisors
+  become: true
+
+  roles:
+    - kubelab-vms

@@ -1,0 +1,23 @@
+---
+- name: Check if VM disk exists
+  ansible.builtin.stat:
+    path: "{{ kubelab_vm_storage_path }}/{{ item.name }}.qcow2"
+  loop: "{{ kubelab_vms }}"
+  register: vm_disks
+
+- name: Create VM qcow2 overlay disks
+  ansible.builtin.command:
+    argv:
+      - qemu-img
+      - create
+      - -f
+      - qcow2
+      - -F
+      - qcow2
+      - -b
+      - "{{ kubelab_vm_storage_path }}/ubuntu-24.04-base.img"
+      - "{{ kubelab_vm_storage_path }}/{{ item.item.name }}.qcow2"
+      - "{{ item.item.disk_gb }}G"
+  loop: "{{ vm_disks.results }}"
+  when: not item.stat.exists
+  changed_when: true

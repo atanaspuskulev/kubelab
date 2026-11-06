@@ -1,0 +1,42 @@
+---
+- name: Check whether VMs already exists
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - dominfo
+      - "{{ item.name }}"
+  loop: "{{ kubelab_vms }}"
+  loop_control: 
+    label: "{{ item.name }}"
+  register: existing_vms
+  failed_when: false
+  changed_when: false
+  check_mode: false
+
+- name: Define and start VMs
+  ansible.builtin.command:
+    argv:
+      - virt-install
+      - --name
+      - "{{ item.item.name }}"
+      - --memory
+      - "{{ item.item.memory_mb }}"
+      - --import
+      - --disk
+      - "path={{ kubelab_vm_storage_path }}/{{ item.item.name }}.qcow2,format=qcow2,bus=virtio"
+      - --disk
+      - "path={{ kubelab_vm_storage_path }}/{{ item.item.name }}-seed.iso,device=cdrom"
+      - --network
+      - "network={{ kubelab_vm_network }},mac={{ item.item.mac }},model=virtio"
+      - --vcpus
+      - "{{ item.item.vcpus }}"
+      - --os-variant
+      - ubuntu24.04
+      - --graphics
+      - none
+      - --noautoconsole
+  loop: "{{ existing_vms.results }}"
+  loop_control: 
+    label: "{{ item.item.name }}"
+  changed_when: true
+  when: item.rc != 0

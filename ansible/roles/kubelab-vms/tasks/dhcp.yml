@@ -1,0 +1,26 @@
+---
+- name: Check existing DHCP reservations
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - net-dumpxml
+      - "{{ kubelab_vm_network }}"
+  register: kubelab_network_xml
+  changed_when: false
+
+- name: Add VM DHCP reservations
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - net-update
+      - "{{ kubelab_vm_network }}"
+      - add-last
+      - ip-dhcp-host
+      - "<host mac='{{ item.mac }}' name='{{ item.name }}' ip='{{ item.ip }}'/>"
+      - --live
+      - --config
+  loop: "{{ kubelab_vms }}"
+  loop_control: 
+    label: "{{ item.name }}"
+  when: item.mac not in kubelab_network_xml.stdout
+  changed_when: true

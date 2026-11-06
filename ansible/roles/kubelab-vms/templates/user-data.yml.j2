@@ -1,0 +1,25 @@
+#cloud-config
+hostname: {{ item.name }}
+manage_etc_hosts: true
+
+users:
+  - name: {{ kubelab_vm_user }}
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: true
+    ssh_authorized_keys:
+      - {{ kubelab_vm_ssh_pubkey }}
+
+ssh_pwauth: false
+disable_root: true
+package_update: true
+
+packages:
+  - qemu-guest-agent
+  - curl
+  - ca-certificates
+
+runcmd:
+  - [systemctl, enable, --now, qemu-guest-agent]
+

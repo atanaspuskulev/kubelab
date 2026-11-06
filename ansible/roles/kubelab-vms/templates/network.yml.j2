@@ -1,0 +1,8 @@
+<ip address="{{ kubelab_network_gateway }}" netmask="{{ kubelab_network_netmask }}">
+  <dhcp>
+    <range start="{{ kubelab_network_dhcp_start }}" end="{{ kubelab_network_dhcp_end }}"/>
+    {% for vm in kubelab_vms %}
+    <host mac="{{ vm.mac }}" name="{{ vm.name }}" ip="{{ vm.ip }}"/>
+    {% endfor %}
+  </dhcp>
+</ip>

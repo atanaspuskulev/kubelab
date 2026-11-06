@@ -1,0 +1,86 @@
+
+---
+- name: Create cloud-init directories
+  ansible.builtin.file:
+    path: "{{ kubelab_vm_storage_path }}/{{ item.name }}-cloud-init"
+    state: directory
+    mode: "0755"
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Generate cloud-init user-data
+  ansible.builtin.template:
+    src: user-data.yml.j2
+    dest: "{{ kubelab_vm_storage_path }}/{{ item.name }}-cloud-init/user-data"
+    mode: "0644"
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: cloud_init_user_data
+
+- name: Generate cloud-init meta-data
+  ansible.builtin.template:
+    src: meta-data.yml.j2
+    dest: "{{ kubelab_vm_storage_path }}/{{ item.name }}-cloud-init/meta-data"
+    mode: "0644"
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: cloud_init_meta_data
+
+- name: Validate cloud-init user-data
+  ansible.builtin.command:
+    argv:
+      - cloud-init
+      - schema
+      - --config-file
+      - "{{ kubelab_vm_storage_path }}/{{ item.name }}-cloud-init/user-data"
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+  changed_when: false
+
+- name: Check existing cloud-init seed ISOs
+  ansible.builtin.stat:
+    path: "{{ kubelab_vm_storage_path }}/{{ item.name }}-seed.iso"
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: cloud_init_isos
+
+- name: Generate cloud-init seed ISOs when required
+  ansible.builtin.command:
+    argv:
+      - cloud-localds
+      - "{{ kubelab_vm_storage_path }}/{{ item.name }}-seed.iso"
+      - "{{ kubelab_vm_storage_path }}/{{ item.name }}-cloud-init/user-data"
+      - "{{ kubelab_vm_storage_path }}/{{ item.name }}-cloud-init/meta-data"
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    index_var: vm_index
+    label: "{{ item.name }}"
+  when: >-
+    cloud_init_user_data.results[vm_index].changed
+    or cloud_init_meta_data.results[vm_index].changed
+    or not cloud_init_isos.results[vm_index].stat.exists
+
+- name: Verify cloud-init seed ISOs
+  ansible.builtin.stat:
+    path: "{{ kubelab_vm_storage_path }}/{{ item.name }}-seed.iso"
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: seed_iso_files
+
+- name: Assert seed ISOs are valid files
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+      - item.stat.size > 0
+    fail_msg: "Missing or empty cloud-init ISO for {{ item.item.name }}"
+  loop: "{{ seed_iso_files.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
