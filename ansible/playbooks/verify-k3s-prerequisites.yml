@@ -1,0 +1,43 @@
+---
+- name: Verify k3s node prerequisites
+  hosts: k3s_cluster
+  gather_facts: true
+  become: false
+
+  tasks:
+    - name: Verify that Ubuntu is installed on VM(s)
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['distribution'] == 'Ubuntu'
+        fail_msg: "Unsupported OS found!"
+
+    - name: Show node resources
+      ansible.builtin.debug:
+        msg:
+          - "Host: {{ inventory_hostname }}"
+          - "CPU: {{ ansible_facts['processor_vcpus'] }}"
+          - "RAM: {{ ansible_facts['memtotal_mb'] }} MB"
+          - "Kernel: {{ ansible_facts['kernel'] }}"
+    
+    - name: Check active swap
+      ansible.builtin.command:
+        cmd: swapon --show
+      register: swap_status
+      changed_when: false
+
+    - name: Verify swap is disabled
+      ansible.builtin.assert:
+        that:
+          - swap_status.stdout | trim == ''
+        fail_msg: "Swap is active on {{ inventory_hostname }}"
+
+    - name: Check node network configuration
+      ansible.builtin.command:
+        cmd: ip -br addr
+      register: network_status
+      changed_when: false
+
+    - name: Show network configuration
+      ansible.builtin.debug:
+        var: network_status.stdout_lines
+

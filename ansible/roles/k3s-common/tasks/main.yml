@@ -1,0 +1,21 @@
+---
+- name: Install required packages
+  ansible.builtin.apt:
+    name: "{{ k3s_required_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Disable active swap
+  ansible.builtin.command:
+    cmd: swapoff -a
+  when:
+    - k3s_disable_swap | bool
+    - ansible_facts['swaptotal_mb'] | int > 0
+
+- name: Disable swap entries in fstab
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^(\s*[^#\n]+\s+\S+\s+swap\s+\S+.*)$'
+    replace: '# \1'
+  when: k3s_disable_swap | bool

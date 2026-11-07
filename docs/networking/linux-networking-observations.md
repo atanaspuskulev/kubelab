@@ -143,7 +143,7 @@ where <name> is the name of the bridged network.
 
 5. Inspect bridge forwarding database
 
-`bridge fbd show br <bridge-name>`
+`bridge fdb show br <bridge-name>`
 
 ## In Docker
 

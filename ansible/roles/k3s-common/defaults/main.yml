@@ -1,0 +1,5 @@
+---
+k3s_disable_swap: true
+k3s_required_packages:
+  - curl
+  - ca-certificates
