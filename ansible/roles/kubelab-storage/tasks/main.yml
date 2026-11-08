@@ -94,7 +94,7 @@
 
 - name: Safeguard; check existing mount at VM storage path
   ansible.builtin.command:
-    cmd: findmnt -n -o SOURCE --target /var/lib/libvirt/image --mountpoint
+    cmd: findmnt -n -o SOURCE --target /var/lib/libvirt/images --mountpoint
   register: existing_mount
   changed_when: false
   failed_when: false
@@ -107,6 +107,36 @@
         (existing_mount.rc == 0 and 
          existing_mount.stdout | trim == '/dev/mapper/ubuntu--vg-vm--storage')
     fail_msg: "Another filesystem is already mounted at VM storage path"
+
+- name: Gets actual fstab UUID of the mount
+  ansible.builtin.command:
+    argv: 
+      - findmnt 
+      -- --noheadings 
+      -- --output
+      -- --raw 
+      -- UUID 
+      -- --moutpoint 
+      -- /var/lib/libvirt/images
+  register: existing_mount
+  changed_when: false
+  failed_when: existing_mount.rc not in [0, 1]
+  check_mode: false
+
+- name: Prevent mounting over another filesystem
+  ansible.builtin.assert:
+    that:
+      - >-
+        existing_mount.rc == 1 or
+        (
+          existing_mount.rc == 0 and
+          (existing_mount.stdout | trim | length) > 0 and
+          (vm_storage_uuid.stdout | trim)
+        )
+    fail_msg: >-
+      Refusing to mount VM storage:
+      /var/lib/libvirt/images is already mounted with UUID {{ existing_mount.stdout | trim | default('unknown', true) }},
+      but expected {{ vm_storage_uuid.stdout | trim }}.
 
 - name: Mount VM storage
   ansible.posix.mount:
