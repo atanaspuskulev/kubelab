@@ -146,3 +146,193 @@ should return
 140.82.121.4    github.com
 ```
 
+
+## VM Provisioning and Validation
+
+The `kubelab-vms` Ansible role provisions and manages the lifecycle of the Kubernetes virtual machines running on QEMU/KVM with libvirt.
+
+The provisioning workflow is designed to be repeatable, idempotent, and recoverable from interrupted executions.
+
+### VM Lifecycle Management
+
+The role manages three virtual machines:
+
+| VM              | IP Address   | Role                     |
+|-----------------|--------------|--------------------------|
+| `k3s-control-1` | `10.20.0.10` | Kubernetes control plane |
+| `k3s-worker-1`  | `10.20.0.11` | Kubernetes worker        |
+| `k3s-worker-2`  | `10.20.0.12` | Kubernetes worker        |
+
+During provisioning, Ansible:
+
+1. Creates missing virtual machines.
+2. Preserves existing VM definitions and disks.
+3. Starts existing VMs if they are stopped.
+4. Enables libvirt autostart for each VM.
+5. Waits for SSH connectivity and cloud-init completion.
+
+VM autostart ensures that the virtual machines are started automatically when the libvirt host starts.
+
+### Persistent DHCP Reservations
+
+The `k3s-lab` libvirt network uses static DHCP reservations to provide predictable IP addresses.
+
+Reservations are declared in:
+
+`roles/kubelab-virt/templates/network.xml.j2`
+
+The template reads VM names, MAC addresses, and IP addresses from the shared `kubelab_vms` inventory variable.
+
+This makes the persistent libvirt network definition the source of truth and prevents configuration drift between live and persistent DHCP reservations.
+
+Verify the persistent configuration:
+
+```bash
+virsh -c qemu:///system net-dumpxml k3s-lab --inactive
+```
+
+Verify the active configuration:
+
+```bash
+virsh -c qemu:///system net-dumpxml k3s-lab
+```
+
+Both should contain the expected MAC-to-IP reservations.
+
+### Cloud-init Seed ISO Management
+
+Cloud-init seed ISOs are generated from two files:
+
+- `user-data`: guest initialization configuration.
+- `meta-data`: instance identification and metadata.
+
+The provisioning role calculates SHA-256 checksums of both input files and combines them into a single checksum.
+
+The checksum is compared with the previously persisted value in:
+
+`<vm-name>-cloud-init/inputs.sha256`
+
+An ISO is regenerated when:
+
+- The ISO does not exist.
+- The input files have changed.
+- The persisted checksum is missing or differs from the current checksum.
+
+The generation process:
+
+1. Creates a temporary ISO file.
+2. Generates the seed ISO using `cloud-localds`.
+3. Verifies that the generated file exists and is nonempty.
+4. Atomically replaces the existing ISO.
+5. Persists the checksum after successful generation.
+6. Removes the temporary file during cleanup.
+
+This allows provisioning to recover from interrupted runs without manually deleting stale ISO files.
+
+**Important:** Updating a seed ISO does not automatically reapply cloud-init configuration inside an existing VM. Cloud-init initialization normally runs once per instance. Changes to an existing VM may require a separate configuration-management operation.
+
+### Provisioning Validation
+
+Run the provisioning playbook from the `ansible/` directory:
+
+```bash
+ansible-playbook -i inventories/host/hosts.yml \
+  playbooks/provision-vms-kubelab.yml
+```
+
+Run it a second time to verify idempotency.
+
+Expected play recap:
+
+```text
+failed=0
+changed=0
+```
+
+#### Verify VM States
+
+On the hypervisor:
+
+```bash
+virsh -c qemu:///system list --all
+```
+
+All three Kubernetes VMs should be running.
+
+#### Verify VM Autostart
+
+```bash
+for vm in k3s-control-1 k3s-worker-1 k3s-worker-2; do
+    virsh -c qemu:///system dominfo "$vm" \
+      | grep -E '^State:|^Autostart:'
+done
+```
+
+Expected for every VM:
+
+```text
+State:          running
+Autostart:      enable
+```
+
+`Autostart Once: disable` is normal and does not affect regular VM autostart.
+
+#### Verify DHCP Reservations
+
+```bash
+virsh -c qemu:///system net-dumpxml k3s-lab --inactive
+```
+
+Expected reservations:
+
+| VM              | MAC Address         | IP Address   |
+|-----------------|---------------------|--------------|
+| `k3s-control-1` | `52:54:00:20:00:10` | `10.20.0.10` |
+| `k3s-worker-1`  | `52:54:00:20:00:11` | `10.20.0.11` |
+| `k3s-worker-2`  | `52:54:00:20:00:12` | `10.20.0.12` |
+
+#### Verify Guest Readiness
+
+The provisioning workflow waits for:
+
+1. SSH connectivity to each VM.
+2. Successful cloud-init completion.
+
+Cloud-init can also be checked manually inside a guest:
+
+```bash
+sudo cloud-init status --wait --long
+```
+
+Expected:
+
+```text
+status: done
+```
+
+### Idempotency and Recovery
+
+The provisioning workflow is designed to maintain the declared infrastructure state without unnecessary changes.
+
+| Scenario                            | Expected behavior                        |
+|-------------------------------------|------------------------------------------|
+| VM already exists and is running    | Preserve VM                              |
+| VM exists but is stopped            | Start VM                                 |
+| VM autostart disabled               | Enable autostart                         |
+| VM autostart enabled                | No change                                |
+| Seed ISO missing                    | Regenerate ISO                           |
+| Cloud-init inputs changed           | Regenerate ISO                           |
+| Seed ISO and checksum unchanged     | Skip regeneration                        |
+| Previous ISO generation interrupted | Regenerate if checksum was not persisted |
+| Provisioning playbook rerun         | `changed=0` when state matches           |
+
+The successful second execution of the provisioning playbook provides evidence of idempotency for the current configuration.
+
+### Operational Considerations
+
+- VM disks and definitions should not be deleted during routine provisioning.
+- Seed ISO regeneration does not imply that existing guests have applied the new configuration.
+- Persistent DHCP reservations should remain consistent with the VM inventory.
+- VM autostart should be managed declaratively rather than configured manually.
+- Provisioning failures should be investigated before attempting destructive recovery actions.
+

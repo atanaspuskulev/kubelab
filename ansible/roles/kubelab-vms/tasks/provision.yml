@@ -40,3 +40,41 @@
     label: "{{ item.item.name }}"
   changed_when: true
   when: item.rc != 0
+
+- name: Ensure VMs are running
+  community.libvirt.virt:
+    name: "{{ item.name }}"
+    state: running
+    uri: qemu:///system
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Check VMs autostart
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - -c
+      - qemu:///system
+      - dominfo
+      - "{{ item.name }}"
+  register: vm_dominfo
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+  changed_when: false
+
+- name: Enable VMs autostart
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - -c
+      - qemu:///system
+      - autostart
+      - "{{ item.item.name }}"
+  loop: "{{ vm_dominfo.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: >-
+    (item.stdout | regex_search('(?m)^Autostart:\s+enable\s*$')) is none
+  changed_when: true

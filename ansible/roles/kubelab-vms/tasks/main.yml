@@ -11,8 +11,5 @@
 - name: Configure cloud-init
   ansible.builtin.import_tasks: cloud-init.yml
 
-- name: Configure VM DHCP reservations
-  ansible.builtin.import_tasks: dhcp.yml
-
 - name: Provision virtual machines
   ansible.builtin.import_tasks: provision.yml

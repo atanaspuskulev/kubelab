@@ -1,0 +1,76 @@
+---
+- name: Calculate combined input checksums
+  ansible.builtin.set_fact:
+    seed_input_checksum: >-
+      {{
+        (
+          cloud_init_input_stats.results[vm_index * 2].stat.checksum
+          ~ ':'
+          ~ cloud_init_input_stats.results[vm_index * 2 + 1].stat.checksum
+        ) | hash('sha256')
+      }}
+
+- name: Determine whether ISO regeneration is required
+  ansible.builtin.set_fact:
+    seed_iso_needs_update: >-
+      {{
+        not cloud_init_isos.results[vm_index].stat.exists
+        or cloud_init_saved_checksums.results[vm_index].failed | default(false)
+        or (
+          cloud_init_saved_checksums.results[vm_index].content
+          | default('')
+          | b64decode
+          | trim
+        ) != seed_input_checksum
+      }}
+
+- name: Rebuild outdated cloud-init ISO
+  when: seed_iso_needs_update | bool
+  block:
+    - name: Create tmp ISO file
+      ansible.builtin.tempfile:
+        state: file
+        path: "{{ kubelab_vm_storage_path }}"
+        prefix: "{{ vm.name }}-seed-"
+        suffix: ".iso"
+      register: tmp_seed_iso
+
+    - name: Generate new seed ISO
+      ansible.builtin.command:
+        argv:
+          - cloud-localds
+          - "{{ tmp_seed_iso.path }}"
+          - "{{ kubelab_vm_storage_path }}/{{ vm.name }}-cloud-init/user-data"
+          - "{{ kubelab_vm_storage_path }}/{{ vm.name }}-cloud-init/meta-data"
+
+    - name: Validate generated ISO
+      ansible.builtin.stat:
+        path: "{{ tmp_seed_iso.path }}"
+      register: generated_seed_iso
+
+    - name: Assert that generated ISO is not empty
+      ansible.builtin.assert:
+        that:
+          - generated_seed_iso.stat.isreg
+          - generated_seed_iso.stat.size > 0
+
+    - name: Atomically replace existing ISO
+      ansible.builtin.command:
+        argv:
+          - mv
+          - -f 
+          - "{{ tmp_seed_iso.path }}"
+          - "{{ kubelab_vm_storage_path }}/{{ vm.name }}-seed.iso"
+
+    - name: Persist successfull input checksum
+      ansible.builtin.copy:
+        content: "{{ seed_input_checksum }}\n"
+        dest: "{{ kubelab_vm_storage_path }}/{{ vm.name }}-cloud-init/inputs.sha256"
+        mode: "0644"
+
+  always:
+    - name: Remove tmp ISO if present
+      ansible.builtin.file:
+        path: "{{ tmp_seed_iso.path }}"
+        state: absent
+      when: tmp_seed_iso.path is defined

@@ -41,46 +41,34 @@
     label: "{{ item.name }}"
   changed_when: false
 
-- name: Check existing cloud-init seed ISOs
+- name: Calculate cloud-init input checksum
   ansible.builtin.stat:
-    path: "{{ kubelab_vm_storage_path }}/{{ item.name }}-seed.iso"
-  loop: "{{ kubelab_vms }}"
+    path: "{{ kubelab_vm_storage_path }}/{{ item.0.name }}-cloud-init/{{ item.1 }}"
+    checksum_algorithm: sha256
+  loop: "{{ kubelab_vms | product(['user-data', 'meta-data']) | list }}"
   loop_control:
-    label: "{{ item.name }}"
-  register: cloud_init_isos
-
-- name: Generate cloud-init seed ISOs when required
-  ansible.builtin.command:
-    argv:
-      - cloud-localds
-      - "{{ kubelab_vm_storage_path }}/{{ item.name }}-seed.iso"
-      - "{{ kubelab_vm_storage_path }}/{{ item.name }}-cloud-init/user-data"
-      - "{{ kubelab_vm_storage_path }}/{{ item.name }}-cloud-init/meta-data"
-  loop: "{{ kubelab_vms }}"
-  loop_control:
-    index_var: vm_index
-    label: "{{ item.name }}"
-  when: >-
-    cloud_init_user_data.results[vm_index].changed
-    or cloud_init_meta_data.results[vm_index].changed
-    or not cloud_init_isos.results[vm_index].stat.exists
+    label: "{{ item.0.name }}/{{ item.1 }}"
+  register: cloud_init_input_stats
 
 - name: Verify cloud-init seed ISOs
   ansible.builtin.stat:
     path: "{{ kubelab_vm_storage_path }}/{{ item.name }}-seed.iso"
   loop: "{{ kubelab_vms }}"
-  loop_control:
-    label: "{{ item.name }}"
-  register: seed_iso_files
+  register: cloud_init_isos
 
-- name: Assert seed ISOs are valid files
-  ansible.builtin.assert:
-    that:
-      - item.stat.exists
-      - item.stat.isreg
-      - item.stat.size > 0
-    fail_msg: "Missing or empty cloud-init ISO for {{ item.item.name }}"
-  loop: "{{ seed_iso_files.results }}"
+- name: Read persisted input checksums
+  ansible.builtin.slurp:
+    src: "{{ kubelab_vm_storage_path }}/{{ item.name }}-cloud-init/inputs.sha256"
+  loop: "{{ kubelab_vms }}"
+  register: cloud_init_saved_checksums
+  failed_when: false
+  changed_when: false
+
+- name: Reconcile cloud-init seed ISOs
+  ansible.builtin.include_tasks: seed-iso.yml
+  loop: "{{ kubelab_vms }}"
   loop_control:
-    label: "{{ item.item.name }}"
+    loop_var: vm
+    index_var: vm_index
+    label: "{{ vm.name }}"
 

@@ -6,7 +6,8 @@ sudo apt update
 sudo apt install -y \
     ansible \
     git \
-    python3
+    python3 \
+    cloud-init
 
 # Make sure, that Community General plugin is installed
 # We need this, because of community.general.lvol

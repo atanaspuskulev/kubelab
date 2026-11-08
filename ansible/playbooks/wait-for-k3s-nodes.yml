@@ -1,0 +1,28 @@
+---
+- name: Wait for Kubernetes VMs to become ready
+  hosts: k3s_cluster
+  gather_facts: false
+  become: false
+
+  tasks:
+    - name: Wait for SSH connectivity
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        sleep: 5
+        timeout: 300
+
+    - name: Wait for cloud-init completion
+      ansible.builtin.command:
+        cmd: cloud-init status --wait --long
+      register: cloud_init_status
+      changed_when: false
+      become: true
+      async: 600
+      poll: 5
+
+    - name: Verify cloid-init completed successfully
+      ansible.builtin.assert:
+        that:
+          - cloud_init_status.rc == 0
+          - "'status: done' in cloud_init_status.stdout"
+        fail_msg: "cloud-init did not complete successfully on {{ inventory_hostname }}"

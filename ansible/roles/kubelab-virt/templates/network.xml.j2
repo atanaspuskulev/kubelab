@@ -5,6 +5,11 @@
     <ip address="{{ item.gateway }}" netmask="{{ item.netmask }}">
         <dhcp>
             <range start="{{ item.dhcp_start }}" end="{{ item.dhcp_end }}"/>
+{% if item.name == 'k3s-lab': %}
+{% for vm in kubelab_vms %}
+            <host mac="{{ vm.mac }}" name="{{ vm.name }}" ip="{{ vm.ip }}"/>
+{% endfor %}
+{% endif %}
         </dhcp>
     </ip>
 </network>

@@ -5,25 +5,3 @@ kubelab_vm_network: k3s-lab
 kubelab_vm_user: ubuntu
 kubelab_vm_ssh_pubkey: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'HOME') ~ '/.ssh/id_rsa.pub') | trim }}"
 
-kubelab_vms:
-  - name: k3s-control-1
-    vcpus: 2
-    memory_mb: 4096
-    disk_gb: 35
-    ip: 10.20.0.10
-    mac: "52:54:00:20:00:10"
-
-  - name: k3s-worker-1
-    vcpus: 2
-    memory_mb: 6144
-    disk_gb: 40
-    ip: 10.20.0.11
-    mac: "52:54:00:20:00:11"
-
-  - name: k3s-worker-2
-    vcpus: 2
-    memory_mb: 6144
-    disk_gb: 40
-    ip: 10.20.0.12
-    mac: "52:54:00:20:00:12"
-
