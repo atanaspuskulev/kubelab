@@ -1,0 +1,51 @@
+---
+- name: Stop all running VMs
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - -c
+      - qemu:///system
+      - destroy
+      - "{{ item.name }}"
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.name in found_running_vms.stdout_lines
+
+- name: Undefine kubelab VMs
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - -c
+      - qemu:///system
+      - undefine
+      - "{{ item.name }}"
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.name in found_vms.stdout_lines
+
+- name: Remove VM disk images
+  ansible.builtin.file:
+    path: "{{ kubelab_vm_storage_path }}/{{ item.name }}.qcow2"
+    state: absent
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Remove VM cloud-init ISO images
+  ansible.builtin.file:
+    path: "{{ kubelab_vm_storage_path }}/{{ item.name }}-seed.iso"
+    state: absent
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Remove VM cloud-init directories
+  ansible.builtin.file:
+    path: "{{ kubelab_vm_storage_path }}/{{ item.name }}-cloud-init"
+    state: absent
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+

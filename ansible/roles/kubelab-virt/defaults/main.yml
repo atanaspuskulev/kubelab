@@ -1,7 +1,7 @@
 ---
 kubelab_networks:
-  - name: k3s-lab
-    bridge: virtbr-k3s
+  - name: k8s-lab
+    bridge: virtbr-k8s
     mode: nat
     gateway: 10.20.0.1
     netmask: 255.255.255.0

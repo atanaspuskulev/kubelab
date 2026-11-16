@@ -1,0 +1,4 @@
+node-ip: "{{ k8s_server_ip }}"
+advertise-address: "{{ k8s_server_ip }}"
+tls-san:
+  - "{{ k8s_server_ip }}"

@@ -1,0 +1,120 @@
+---
+- name: Validate VM destruction targets
+  ansible.builtin.assert:
+    that:
+      - kubelab_vms is defined
+      - kubelab_vms | length > 0
+      - kubelab_vm_storage_path is defined
+      - kubelab_vm_storage_path == '/var/lib/libvirt/images'
+    fail_msg: >-
+      VM destruction aborted.
+      VM definitions or expected storage path are invalid
+
+- name: Validate VM names
+  ansible.builtin.assert:
+    that:
+      - item.name is defined
+      - item.name is match('^(k8s|k8s)-(control|worker)-[0-9]+$')
+    fail_msg: >-
+      Unexpected VM name: {{ item.name | default('undefined') }}.
+      Destruction is restricted to kubelab VMS.
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name | default('undefined') }}"
+
+- name: Validate discovered VM resources
+  ansible.builtin.assert:
+    that:
+      - found_vms.rc == 0
+      - found_vm_disks.results | length == kubelab_vms | length
+      - found_vm_isos.results | length == kubelab_vms | length
+      - found_vm_cloud_init_dirs.results | length == kubelab_vms | length
+    fail_msg: >-
+      VM resource discovery was incomplete.
+      Destruction aborted.
+  
+- name: Verify discovered cloud-init paths are directories
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or item.stat.isdir
+    fail_msg: >-
+      Expected a directory at {{ item.stat.path }}.
+      Destruction aborted.
+  loop: "{{ found_vm_cloud_init_dirs.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
+- name: Verify discovered disk paths are regular files
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or item.stat.isreg
+    fail_msg: >-
+      Unexpected VM disk resource for {{ item.item.name }}.
+      Destruction aborted.
+  loop: "{{ found_vm_disks.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
+- name: Verify discovered seed ISO paths are regular files
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or item.stat.isreg
+    fail_msg: >-
+      Unexpected cloud-init ISO resource for {{ item.item.name }}.
+      Destruction aborted.
+  loop: "{{ found_vm_isos.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
+- name: Build expected VM storage paths
+  ansible.builtin.set_fact:
+    vm_destroy_storage_paths: >-
+      {{
+        (
+          kubelab_vms
+          | map(attribute='name')
+          | map('regex_replace', '^(.*)$', kubelab_vm_storage_path ~ '/\\1.qcow2')
+          | list
+        )
+        +
+        (
+          kubelab_vms
+          | map(attribute='name')
+          | map('regex_replace', '^(.*)$', kubelab_vm_storage_path ~ '/\\1-seed.iso')
+          | list
+        )
+      }}
+
+- name: Prevent deletion of disks attachet to unrelated VMs
+  ansible.builtin.assert:
+    that:
+      - >-
+        (
+          item.stdout_lines
+          | select('search', '(^|\\s)(' ~ 
+            (vm_destroy_storage_paths | map('regex_escape') | join('|')) ~
+            ')(\\s|$)')
+          | list
+          | length
+        ) == 0
+    fail_msg: >-
+      VM {{ item.item }} references kubelab storage, 
+      but it is not listed for destruction.
+  loop: "{{ found_domain_disks.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.item not in (kubelab_vms | map(attribute='name') | list)
+
+- name: Validate persistent VM definitions
+  ansible.builtin.assert:
+    that:
+      - item.rc == 0
+    fail_msg: >-
+      Unable to read persistent libvirt definition for {{ item.item.name }}.
+  loop: "{{ found_vm_xml.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item.item.name in found_vms.stdout_lines
+
+
+

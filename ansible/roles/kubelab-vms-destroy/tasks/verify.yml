@@ -1,0 +1,42 @@
+---
+- name: Find remaining libvirt VMs
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - -c
+      - qemu:///system
+      - list
+      - --all
+      - --name
+  register: remaining_vms
+  changed_when: false
+  check_mode: false
+
+- name: Verify VMs definitions were removed
+  ansible.builtin.assert:
+    that:
+      - item.name not in remaining_vms.stdout_lines
+    fail_msg: >-
+      VM {{ item.name }} still exists.
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Verify VM storage was removed
+  ansible.builtin.stat:
+    path: "{{ item.0.name | regex_replace('$', item.1) | regex_replace('^', kubelab_vm_storage_path ~ '/') }}"
+  loop: "{{ kubelab_vms | product(['.qcow2', '-seed.iso', '-cloud-init']) | list }}"
+  loop_control:
+    label: "{{ item.0.name }}{{ item.1 }}"
+  register: remaining_vm_storage
+
+- name: Ensure VM storage is absent
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists
+    fail_msg: >-
+      Storage still exists: {{ kubelab_vm_storage_path }}/{{ item.item.0.name }}{{ item.item.1 }}
+  loop: "{{ remaining_vm_storage.results }}"
+  loop_control:
+    label: "{{ item.item.0.name }}{{ item.item.1 }}"
+

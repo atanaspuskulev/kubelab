@@ -1,0 +1,83 @@
+---
+- name: Find all existing libvirt VMs
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - -c
+      - qemu:///system
+      - list
+      - --all
+      - --name
+  register: found_vms
+  changed_when: false
+  check_mode: false
+
+- name: Find VM disk images
+  ansible.builtin.stat:
+    path: "{{ kubelab_vm_storage_path }}/{{ item.name }}.qcow2"
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: found_vm_disks
+
+- name: Find VM cloud-init ISO images
+  ansible.builtin.stat:
+    path: "{{ kubelab_vm_storage_path }}/{{ item.name }}-seed.iso"
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: found_vm_isos
+
+- name: Find VM cloud-init directories
+  ansible.builtin.stat:
+    path: "{{ kubelab_vm_storage_path }}/{{ item.name }}-cloud-init"
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: found_vm_cloud_init_dirs
+
+- name: Find disk attachments of all libvirt VMs
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - -c
+      - qemu:///system
+      - domblklist
+      - "{{ item }}"
+      - --details
+  loop: "{{ found_vms.stdout_lines }}"
+  loop_control:
+    label: "{{ item }}"
+  register: found_domain_disks
+  changed_when: false
+  check_mode: false
+
+- name: Find persistem VM definitions
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - -c
+      - qemu:///system
+      - dumpxml
+      - --inactive
+      - "{{ item.name }}"
+  loop: "{{ kubelab_vms }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: found_vm_xml
+  changed_when: false
+  check_mode: false
+  failed_when: false
+
+- name: Find running libvirt VMs
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - -c
+      - qemu:///system
+      - list
+      - --name
+  register: found_running_vms
+  changed_when: false
+  check_mode: false
+

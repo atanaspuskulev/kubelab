@@ -1,0 +1,22 @@
+---
+- name: Check for the explicit VM destruction confirmation
+  ansible.builtin.assert:
+    that:
+      - confirm_vm_destroy | default(false) | bool
+    fail_msg: >-
+      VM destruction aborted.
+      Run with -e confirm_vm_destroy=true to authorize VMs deletion.
+
+- name: Discover VM resources
+  ansible.builtin.import_tasks: discovery.yml
+
+- name: Validate VMs targets
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Clean up all VMs resources
+  ansible.builtin.import_tasks: cleanup.yml
+  when: not ansible_check_mode
+
+- name: Verify cleanup
+  ansible.builtin.import_tasks: verify.yml
+  when: not ansible_check_mode

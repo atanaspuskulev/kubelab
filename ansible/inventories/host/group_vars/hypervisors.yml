@@ -1,14 +1,15 @@
-kubelab_vm_network: k3s-lab
+kubelab_vm_network: k8s-lab
+kubelab_vm_storage_path: /var/lib/libvirt/images
 
 kubelab_vms:
-  - name: k3s-control-1
+  - name: k8s-control-1
     ip: 10.20.0.10
     mac: "52:54:00:20:00:10"
 
-  - name: k3s-worker-1
+  - name: k8s-worker-1
     ip: 10.20.0.11
     mac: "52:54:00:20:00:11"
 
-  - name: k3s-worker-2
+  - name: k8s-worker-2
     ip: 10.20.0.12
     mac: "52:54:00:20:00:12"
