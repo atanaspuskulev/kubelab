@@ -1,0 +1,32 @@
+---
+- name: Load Kubernetes kernel modules
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - overlay
+    - br_netfilter
+
+- name: Persist Kubernetes kernel modules
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/k8s.conf
+    mode: "0644"
+    content: |
+      overlay
+      br_netfilter
+
+- name: Configure Kubernetes networking sysctl
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-kubernetes-networking.conf
+    mode: "0644"
+    content: |
+      net.ipv4.ip_forward = 1
+      net.bridge.bridge-nf-call-iptables = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+  register: k8s_sysctl
+
+- name: Apply Kubernetes network sysctl settings
+  ansible.builtin.command:
+    cmd: sysctl --system
+  when: k8s_sysctl.changed
+

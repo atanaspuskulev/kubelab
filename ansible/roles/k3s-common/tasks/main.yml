@@ -16,6 +16,9 @@
 - name: Disable swap entries in fstab
   ansible.builtin.replace:
     path: /etc/fstab
-    regexp: '^(\s*[^#\n]+\s+\S+\s+swap\s+\S+.*)$'
+    regexp: '^(\s*[^#\s]+\s+\S+\s+swap\s+.*)$'
     replace: '# \1'
   when: k3s_disable_swap | bool
+
+- name: Configure Kubernetes kernel and networking
+  ansible.builtin.import_tasks: kernel.yml
