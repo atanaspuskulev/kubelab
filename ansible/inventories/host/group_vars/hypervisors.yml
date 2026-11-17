@@ -5,11 +5,20 @@ kubelab_vms:
   - name: k8s-control-1
     ip: 10.20.0.10
     mac: "52:54:00:20:00:10"
+    vcpus: 2
+    memory_mb: 4096
+    disk_gb: 35
 
   - name: k8s-worker-1
     ip: 10.20.0.11
     mac: "52:54:00:20:00:11"
+    vcpus: 2
+    memory_mb: 3072
+    disk_gb: 20
 
   - name: k8s-worker-2
     ip: 10.20.0.12
     mac: "52:54:00:20:00:12"
+    vcpus: 2
+    memory_mb: 3072
+    disk_gb: 20
