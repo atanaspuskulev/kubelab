@@ -1,0 +1,22 @@
+---
+- name: Install Kubernetes components
+  ansible.builtin.apt:
+    name:
+      - kubeadm
+      - kubelet
+      - kubectl
+    state: present
+
+- name: Hold installed Kubernetes packages for explicit upgrades
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop:
+    - kubeadm
+    - kubelet
+    - kubectl
+
+- name: Enable kubelet service
+  ansible.builtin.systemd_service:
+    name: kubelet
+    enabled: true

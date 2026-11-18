@@ -3,3 +3,4 @@ k8s_disable_swap: true
 k8s_required_packages:
   - curl
   - ca-certificates
+  - gpg

@@ -1,0 +1,11 @@
+---
+- name: Configure Kubernetes APT repository
+  ansible.builtin.import_tasks: repository.yml
+
+- name: Refresh APT
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 0
+
+- name: Install Kubernetes
+  ansible.builtin.import_tasks: install.yml
