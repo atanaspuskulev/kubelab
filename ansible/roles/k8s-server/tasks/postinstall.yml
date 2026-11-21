@@ -11,6 +11,21 @@
       - "{{ kube_kubeadm_config }}"
   when: kubeadm_config_check.rc != 0
 
+- name: Handle missing kubelet configuration
+  ansible.builtin.command:
+    argv:
+      - kubeadm
+      - init
+      - phase
+      - upload-config
+      - kubelet
+      - --config
+      - "{{ kube_kubeadm_config }}"
+  when: >-
+    (kubelet_config_check.stdout | trim == '')
+    or
+    (kubelet_config_rbac_check.stdout | trim == '')
+
 - name: Mark node as control-plane if missing
   ansible.builtin.command:
     argv:
@@ -19,9 +34,21 @@
       - phase
       - mark-control-plane
   when: >-
-    'node-role.kubernetes.io/control-plane'
-    not in (control_plane_label.stdout | from_json).metadata.labels
-
+    (
+      'node-role.kubernetes.io/control-plane'
+     not in (control_plane_label.stdout | from_json).metadata.labels
+    )
+    or
+    (
+      (
+        (control_plane_label.stdout | from_json).spec.taints
+        | default([])
+        | selectattr('key', 'equalto', 'node-role.kubernetes.io/control-plane')
+        | selectattr('effect', 'equalto', 'NoSchedule')
+        | list
+        | length
+      ) == 0
+    )
 - name: Install CoreDNS if missing
   ansible.builtin.command:
     argv:
@@ -45,4 +72,30 @@
       - --config
       - "{{ kube_kubeadm_config }}"
   when: kube_proxy_check.rc != 0
+
+- name: Verify kubelet certification rotation recovery prerequisites
+  ansible.builtin.assert:
+    that:
+      - kubelet_client_cert_stat.stat.exists
+      - kubelet_client_cert_stat.stat.isreg | default(false)
+    fail_msg: "Rotating kubelet certificate is missing"
+  when: >-
+    (kubelet_cert_check.stdout | trim != kube_kubelet_client_cert)
+    or
+    (kubelet_key_check.stdout | trim != kube_kubelet_client_cert)
+
+- name: Finalize kubelet client certification rotation
+  ansible.builtin.command:
+    argv:
+      - kubeadm
+      - init
+      - phase
+      - kubelet-finalize
+      - enable-client-cert-rotation
+      - --config
+      - "{{ kube_kubeadm_config }}"
+  when: >-
+    (kubelet_cert_check.stdout | trim != kube_kubelet_client_cert)
+    or
+    (kubelet_key_check.stdout | trim != kube_kubelet_client_cert)
 

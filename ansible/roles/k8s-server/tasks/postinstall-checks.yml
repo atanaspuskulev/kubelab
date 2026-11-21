@@ -10,11 +10,45 @@
       - kubeadm-config
       - -n
       - kube-system
+      - --ignore-not-found
+      - -o
+      - name
   register: kubeadm_config_check
   changed_when: false
-  failed_when: >-
-    kubeadm_config_check.rc != 0 and
-    'NotFound' not in kubeadm_config_check.stderr
+
+- name: Check kubelet cluster configuration
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - get
+      - configmap
+      - kubelet-config
+      - -n
+      - kube-system
+      - --ignore-not-found
+      - -o
+      - name
+  register: kubelet_config_check
+  changed_when: false
+
+- name: Check kubelet configuration RoleBinding
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - get
+      - rolebinding
+      - kubeadm:kubelet-config
+      - -n
+      - kube-system
+      - --ignore-not-found
+      - -o
+      - name
+  register: kubelet_config_rbac_check
+  changed_when: false
 
 - name: Check control-plane label
   ansible.builtin.command:
@@ -41,9 +75,11 @@
       - coredns
       - -n
       - kube-system
+      - --ignore-not-found
+      - -o
+      - name
   register: coredns_check
   changed_when: false
-  failed_when: false
 
 - name: Check kube-proxy DaemonSet
   ansible.builtin.command:
@@ -56,7 +92,40 @@
       - kube-proxy
       - -n
       - kube-system
+      - --ignore-not-found
+      - -o
+      - name
   register: kube_proxy_check
   changed_when: false
-  failed_when: false
 
+- name: Check kubelet client cert reference
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_kubelet_config }}"
+      - config
+      - view
+      - --minify
+      - "-o=jsonpath={.users[0].user.client-certificate}"
+  register: kubelet_cert_check
+  changed_when: false
+
+- name: Check kubelet client key reference
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_kubelet_config }}"
+      - config
+      - view
+      - --minify
+      - "-o=jsonpath={.users[0].user.client-key}"
+  register: kubelet_key_check
+  changed_when: false
+
+- name: Check rotating kubelet cert
+  ansible.builtin.stat:
+    path: "{{ kube_kubelet_client_cert }}"
+    follow: true
+  register: kubelet_client_cert_stat

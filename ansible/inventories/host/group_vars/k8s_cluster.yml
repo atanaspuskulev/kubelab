@@ -6,3 +6,11 @@ kubernetes_api_port: 6443
 kubernetes_pod_cidr: "10.244.0.0/16"
 kube_admin_config: /etc/kubernetes/admin.conf
 kube_kubeadm_config: /etc/kubernetes/kubeadm-config.yml
+kube_suadmin_config: /etc/kubernetes/super-admin.conf
+kube_kubelet_config: /etc/kubernetes/kubelet.conf
+kube_kubelet_client_cert: /var/lib/kubelet/pki/kubelet-client-current.pem
+kube_manifests_dir: /etc/kubernetes/manifests
+kube_etcd_data_dir: /var/lib/etcd
+kube_cri_tools_version: "1.37.0-1.1"
+kube_cri_socket: "unix:///run/containerd/containerd.sock"
+

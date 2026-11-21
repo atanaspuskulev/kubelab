@@ -1,4 +1,20 @@
 ---
+- name: Validate Kubernetes API server readiness
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - get
+      - --raw=/readyz
+  register: k8s_api_ready
+  changed_when: false
+  retries: 12
+  delay: 5
+  until:
+    - k8s_api_ready.rc == 0
+    - k8s_api_ready.stdout | trim == 'ok'
+
 - name: Get Kubernetes node information
   ansible.builtin.command:
     argv:
@@ -116,3 +132,77 @@
     - kube-apiserver
     - kube-controller-manager
     - kube-scheduler
+
+- name: Get finalized kubelet client certificate reference
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_kubelet_config }}"
+      - config
+      - view
+      - --minify
+      - "-o=jsonpath={.users[0].user.client-certificate}"
+  register: kubelet_cert_validation
+  changed_when: false
+
+- name: Get finalized kubelet client key reference
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_kubelet_config }}"
+      - config
+      - view
+      - --minify
+      - "-o=jsonpath={.users[0].user.client-key}"
+  register: kubelet_key_validation
+  changed_when: false
+
+- name: Validate kubelect client certificate rotation configuration
+  ansible.builtin.assert:
+    that:
+      - kubelet_cert_validation.stdout | trim == kube_kubelet_client_cert
+      - kubelet_key_validation.stdout | trim == kube_kubelet_client_cert
+    fail_msg: "Kubelet does not reference the rotating client certificate"
+    success_msg: "Kubelet references the rotating client certificate"
+
+- name: Validate kubelet service is active
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - kubelet
+  register: kubelet_service_status
+  changed_when: false
+  retries: 10
+  delay: 3
+  until:
+    - kubelet_service_status.rc == 0
+    - kubelet_service_status.stdout | trim == 'active'
+
+- name: Validate kubelet configuration
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - get
+      - configmap
+      - kubelet-config
+      - -n
+      - kube-system
+  changed_when: false
+
+- name: Validate kubelet configuration RoleBinding
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - get
+      - rolebinding
+      - kubeadm:kubelet-config
+      - -n
+      - kube-system
+  changed_when: false

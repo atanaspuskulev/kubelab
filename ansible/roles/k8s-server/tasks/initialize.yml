@@ -1,8 +1,23 @@
 ---
-- name: Check if the Kubernetes control plane is initialized
+- name: Check Kubernetes admin configuration
   ansible.builtin.stat:
-    path: /etc/kubernetes/admin.conf
+    path: "{{ kube_admin_config }}"
   register: kubernetes_admin_conf
+
+- name: Check existing static pod manifests
+  ansible.builtin.find:
+    paths: "{{ kube_manifests_dir }}"
+    file_type: file
+    hidden: true
+    recurse: false
+    excludes:
+      - ".kubelet-keep"
+  register: kubernetes_static_manifests
+
+- name: Check existing etcd data
+  ansible.builtin.stat:
+    path: "{{ kube_etcd_data_dir }}/member"
+  register: kubernetes_etcd_data
 
 - name: Initialize Kubernetes control plane
   ansible.builtin.command:
@@ -10,6 +25,61 @@
       - kubeadm
       - init
       - --config
-      - /etc/kubernetes/kubeadm-config.yml
-    creates: /etc/kubernetes/admin.conf
+      - "{{ kube_kubeadm_config }}"
+    creates: "{{ kube_admin_config }}"
   when: not kubernetes_admin_conf.stat.exists
+
+- name: Check Kubernetes API server readiness
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - --request-timeout=5s
+      - get
+      - --raw=/readyz
+  register: kubernetes_api_check
+  changed_when: false
+  failed_when: false
+  when: kubernetes_admin_conf.stat.exists
+
+- name: Determine Kubernetes initialization state
+  ansible.builtin.set_fact:
+    kubernetes_initialization_state: >-
+      {{
+        'uninitialized'
+        if (
+          not kubernetes_admin_conf.stat.exists
+          and kubernetes_static_manifests.matched == 0
+          and not kubernetes_etcd_data.stat.exists
+        )
+        else 'operational'
+        if (
+          kubernetes_admin_conf.stat.exists
+          and kubernetes_api_check.rc | default(1) == 0
+        ) else 'incomplete_or_unhealthy'
+      }}
+
+- name: Kubernetes initialization state
+  ansible.builtin.debug:
+    var: kubernetes_initialization_state
+
+- name: Protect existing kubernetes control-plane
+  ansible.builtin.fail:
+    msg: >-
+      Existing Kubernetes initialization artifacts were detected,      
+      but the API server is not operational or admin.conf is missing.
+      Manual investigation is required.
+      Automatic initialization or reset will not be attempted.
+  when: >-
+    kubernetes_initialization_state == 'incomplete_or_unhealthy'
+
+- name: Initialize Kubernetes control plane
+  ansible.builtin.command:
+    argv:
+      - kubeadm
+      - init
+      - --config
+      - "{{ kube_kubeadmin_config }}"
+    creates: "{{ kube_admin_config }}"
+  when: kubernetes_initialization_state == 'uninitialized'
