@@ -1,0 +1,18 @@
+---
+- name: Configure Kubernetes control plane
+  ansible.builtin.import_tasks: configure.yml
+
+- name: Initialize Kubernetes control plane
+  ansible.builtin.import_tasks: initialize.yml
+
+- name: Recover missing adminiistrator RBAC
+  ansible.builtin.import_tasks: recover-admin-rbac.yml  
+
+- name: Run post-install checks
+  ansible.builtin.import_tasks: postinstall-checks.yml
+
+- name: Run post-install
+  ansible.builtin.import_tasks: postinstall.yml
+
+- name: Validate Kubernetes configured control-plane
+  ansible.builtin.import_tasks: validate.yml

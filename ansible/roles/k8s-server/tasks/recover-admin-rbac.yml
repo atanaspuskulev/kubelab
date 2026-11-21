@@ -1,0 +1,27 @@
+---
+- name: Check Kubernetes administrator ClusterRoleBinding
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig=/etc/kubernetes/super-admin.conf
+      - get
+      - clusterrolebinding
+      - kubeadm:cluster-admins
+  register: admin_rbac_binding
+  changed_when: false
+  failed_when: admin_rbac_binding.rc not in [0, 1]
+
+- name: Restore Kubernetes administrator ClusterRoleBinding
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig=/etc/kubernetes/super-admin.conf
+      - create 
+      - clusterrolebinding
+      - kubeadm:cluster-admiins
+      - --clusterrole=cluster-admin
+      - --group=kubeadm:cluster-admins
+  when:
+    - admin_rbac_binding.rc == 1
+    - "'NotFound' in admin_rbac_binding.stderr"
+

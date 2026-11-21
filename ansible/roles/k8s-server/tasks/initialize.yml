@@ -1,0 +1,15 @@
+---
+- name: Check if the Kubernetes control plane is initialized
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: kubernetes_admin_conf
+
+- name: Initialize Kubernetes control plane
+  ansible.builtin.command:
+    argv:
+      - kubeadm
+      - init
+      - --config
+      - /etc/kubernetes/kubeadm-config.yml
+    creates: /etc/kubernetes/admin.conf
+  when: not kubernetes_admin_conf.stat.exists

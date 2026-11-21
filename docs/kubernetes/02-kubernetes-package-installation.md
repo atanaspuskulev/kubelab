@@ -35,7 +35,8 @@ ansible/
 │   ├── hosts.yml
 │   └── group_vars/k8s_cluster.yml
 ├── playbooks/
-│   └── kubernetes-install.yml
+│   └── k8s/
+│       └── kubernetes-install.yml
 └── roles/
     └── kubeadm/
         └── tasks/
@@ -94,7 +95,7 @@ ansible-playbook \
 
 ansible-playbook \
   -i inventories/host/hosts.yml \
-  playbooks/kubernetes-install.yml
+  playbooks/kubernetes-install.yml -K
 ```
 
 The `--list-tasks` check confirmed the repository tasks execute before the package-installation tasks. It is a **parse/ordering check**, not proof that installation succeeds.
@@ -151,7 +152,7 @@ gpg --show-keys --with-fingerprint \
 
 **Observed:**
 
-- `/etc/apt/keyrings/kubernetes-release.key` existed (approximately 1.7 KB).
+- `/etc/apt/keyrings/kubernetes-release.key` existed.
 - Its fingerprint was `DE15 B144 86CD 377B 9E87 6E1A 2346 54DA 9A29 6436`, matching APT's missing key ID.
 - `/etc/apt/keyrings/kubernetes-apt-keyring.gpg` **did not exist**.
 
@@ -198,7 +199,6 @@ kubeadm - Command-line utility for administering a Kubernetes cluster
 - **APT source configuration and APT package indexes are distinct.** Refresh indexes explicitly after introducing the source.
 - **Validate at each layer.** Check key fingerprint, keyring existence, APT update, package discovery, installed binaries, and kubelet enablement separately.
 - **Use controlled upgrades.** Held Kubernetes packages should be upgraded intentionally and with version compatibility in mind.
-- **Keep infrastructure ownership clear.** Ansible provisions/configures the local lab; later Terraform work targets AWS; Kubernetes/Helm/FluxCD will manage workloads.
 
 ## 10. Post-install configuration
 

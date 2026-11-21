@@ -1,0 +1,8 @@
+---
+- name: Configure Kubernetes distribution whenever needed
+  hosts: k8s_servers
+  become: true
+  gather_facts: true
+
+  roles:
+    - k8s-server

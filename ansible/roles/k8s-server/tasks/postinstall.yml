@@ -1,0 +1,48 @@
+---
+- name: Upload kubeadm config if missing
+  ansible.builtin.command:
+    argv:
+      - kubeadm
+      - init
+      - phase 
+      - upload-config
+      - kubeadm
+      - --config
+      - "{{ kube_kubeadm_config }}"
+  when: kubeadm_config_check.rc != 0
+
+- name: Mark node as control-plane if missing
+  ansible.builtin.command:
+    argv:
+      - kubeadm
+      - init
+      - phase
+      - mark-control-plane
+  when: >-
+    'node-role.kubernetes.io/control-plane'
+    not in (control_plane_label.stdout | from_json).metadata.labels
+
+- name: Install CoreDNS if missing
+  ansible.builtin.command:
+    argv:
+      - kubeadm
+      - init
+      - phase
+      - addon
+      - coredns
+      - --config
+      - "{{ kube_kubeadm_config }}"
+  when: coredns_check.rc != 0
+
+- name: Install kube-proxy if missing
+  ansible.builtin.command:
+    argv:
+      - kubeadm
+      - init
+      - phase
+      - addon
+      - kube-proxy
+      - --config
+      - "{{ kube_kubeadm_config }}"
+  when: kube_proxy_check.rc != 0
+

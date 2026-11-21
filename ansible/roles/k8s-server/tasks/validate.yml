@@ -1,0 +1,118 @@
+---
+- name: Get Kubernetes node information
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - get
+      - node
+      - "{{ inventory_hostname }}"
+      - -o
+      - json
+  register: k8s_node
+  changed_when: false
+
+- name: Validate control-plane label
+  ansible.builtin.assert:
+    that:
+      - "'node-role.kubernetes.io/control-plane' in (k8s_node.stdout | from_json).metadata.labels"
+    fail_msg: "Control-plane label is missing"
+    success_msg: "Control-plane label is present"
+
+- name: Validate control-plane taint
+  ansible.builtin.assert:
+    that:
+      - >-
+        ((k8s_node.stdout | from_json).spec.taints | default([]))
+        | selectattr('key', 'equalto', 'node-role.kubernetes.io/control-plane')
+        | selectattr('effect', 'equalto', 'NoSchedule')
+        | list | length > 0
+    fail_msg: "Control-plane NoSchedule taint is missing"
+    success_msg: "Control-plane NoSchedule taint is present"
+
+- name: Validate kubeadm configuration
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - get
+      - configmap
+      - kubeadm-config
+      - -n
+      - kube-system
+  changed_when: false
+
+- name: Validate cluster bootstrap information
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - get
+      - configmap
+      - cluster-info
+      - -n
+      - kube-public
+  changed_when: false
+
+- name: Validate CoreDNS deployment
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - get
+      - deployment
+      - coredns
+      - -n
+      - kube-system
+  changed_when: false
+
+- name: Validate kube-proxy DaemonSet
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - get
+      - daemonset
+      - kube-proxy
+      - -n
+      - kube-system
+  changed_when: false
+
+- name: Get Kubernetes system Pods
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - get
+      - pods
+      - -n
+      - kube-system
+      - -o
+      - json
+  register: k8s_system_pods
+  changed_when: false
+
+- name: Validate static control-plane Pods
+  ansible.builtin.assert:
+    that:
+      - >-
+        (
+          (k8s_system_pods.stdout | from_json)['items']
+          | selectattr('metadata.name', 'equalto', item ~ '-' ~ inventory_hostname)
+          | selectattr('status.phase', 'equalto', 'Running')
+          | list
+          | length
+        ) == 1
+    fail_msg: "{{ item }} is not Running"
+    success_msg: "{{ item }} is Running"
+  loop:
+    - etcd
+    - kube-apiserver
+    - kube-controller-manager
+    - kube-scheduler

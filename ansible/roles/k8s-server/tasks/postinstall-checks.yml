@@ -1,0 +1,62 @@
+---
+- name: Check kubeadm cluster configuration
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - get
+      - configmap
+      - kubeadm-config
+      - -n
+      - kube-system
+  register: kubeadm_config_check
+  changed_when: false
+  failed_when: >-
+    kubeadm_config_check.rc != 0 and
+    'NotFound' not in kubeadm_config_check.stderr
+
+- name: Check control-plane label
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - get
+      - node
+      - "{{ inventory_hostname }}"
+      - -o
+      - json
+  register: control_plane_label
+  changed_when: false
+
+- name: Check CoreDNS deployment
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - get
+      - deployment
+      - coredns
+      - -n
+      - kube-system
+  register: coredns_check
+  changed_when: false
+  failed_when: false
+
+- name: Check kube-proxy DaemonSet
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - get
+      - daemonset
+      - kube-proxy
+      - -n
+      - kube-system
+  register: kube_proxy_check
+  changed_when: false
+  failed_when: false
+
