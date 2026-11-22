@@ -1,0 +1,52 @@
+---
+- name: Enroll Kubernetes worker nodes
+  hosts: k8s_agents
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Run worker preflight checks
+      ansible.builtin.import_role:
+        name: k8s-agent
+        tasks_from: preflight
+
+- name: Generate temp worker join credentials
+  hosts: k8s_servers
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Generate bootstrap token if workers need enrollment
+      ansible.builtin.command:
+        argv:
+          - kubeadm
+          - token
+          - create
+          - --ttl
+          - 15m
+          - --print-join-command
+      register: kubeadm_join_command
+      changed_when: true
+      no_log: true
+      when: >-
+        groups['k8s_agents']
+        | map('extract', hostvars, 'worker_join_required')
+        | select('equalto', true)
+        | list
+        | length > 0
+
+- name: Join Kubernetes worker nodes
+  hosts: k8s_agents
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Join worker
+      ansible.builtin.import_role:
+        name: k8s-agent
+        tasks_from: join
+
+    - name: Validate worker registration
+      ansible.builtin.import_role:
+        name: k8s-agent
+        tasks_from: validate

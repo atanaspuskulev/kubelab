@@ -1,0 +1,11 @@
+---
+- name: Join worker to Kubernetes cluster
+  ansible.builtin.command:
+    cmd: >-
+      {{ hostvars[groups['k8s_servers'][0]].kubeadm_join_command.stdout }}
+      --cri-socket unix:///run/containerd/containerd.sock
+  register: worker_join_result
+  changed_when: worker_join_result.rc == 0
+  no_log: true
+  when: worker_join_required | bool
+

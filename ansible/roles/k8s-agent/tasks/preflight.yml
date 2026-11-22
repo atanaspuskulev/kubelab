@@ -1,0 +1,55 @@
+---
+- name: Inspect local kubelet configuration
+  ansible.builtin.stat:
+    path: "{{ kube_kubelet_config }}"
+  register: worker_kubelet_config
+
+- name: Check Kubernetes API connectivity
+  ansible.builtin.wait_for:
+    host: "{{ kubernetes_api_endpoint }}"
+    port: "{{ kubernetes_api_port }}"
+    timeout: 10
+    state: started
+  changed_when: false
+
+- name: Check worker registration in Kubernetes API
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - get
+      - node
+      - "{{ inventory_hostname }}"
+      - --ignore-not-found
+      - -o
+      - name
+  delegate_to: "{{ groups['k8s_servers'][0] }}"
+  become: true
+  register: worker_api_registration
+  changed_when: false
+  failed_when: worker_api_registration.rc != 0
+
+- name: Report worker enrollment state
+  ansible.builtin.debug:
+    msg:
+      - "Worker: {{ inventory_hostname }}"
+      - "Local kubelet config exists: {{ worker_kubelet_config.stat.exists }}"
+      - "Registered in API: {{ worker_api_registration.stdout | trim != ''}}"
+
+- name: Reject inconsistent worker enrollment state
+  ansible.builtin.assert:
+    that:
+      - >-
+        worker_kubelet_config.stat.exists == 
+        (worker_api_registration.stdout | trim != '')
+    fail_msg: >-
+      Worker {{ inventory_hostname }} has inconsistent enrollment state.
+      Investigate before attempt to kubeadm join it.
+
+- name: Determine whether worker requires enrollment
+  ansible.builtin.set_fact:
+    worker_join_required: >-
+      {{ not worker_kubelet_config.stat.exists 
+        and (worker_api_registration.stdout | trim == '') }}
+

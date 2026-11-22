@@ -1,0 +1,8 @@
+---
+- name: Install Helm CLI on Kubernetes control plane
+  hosts: k8s_servers
+  become: true
+  gather_facts: true
+
+  roles:
+    - helm

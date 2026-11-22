@@ -1,0 +1,71 @@
+---
+- name: Check currently installed Helm version
+  ansible.builtin.command:
+    cmd: "{{ helm_install_path }} version --short"
+  register: helm_installed
+  changed_when: false
+  failed_when: false
+
+- name: Install required Helm version
+  when: >-
+    helm_installed.rc != 0
+    or helm_version not in helm_installed.stdout
+  block:
+    - name: Create temp install directory
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: helm
+      register: helm_tmp
+
+    - name: Download Helm archive
+      ansible.builtin.get_url:
+        url: "{{ helm_download_url }}/{{ helm_archive }}"
+        dest: "{{ helm_tmp.path }}/{{ helm_archive}}"
+        mode: "0644"
+
+    - name: Download Helm checksum
+      ansible.builtin.get_url:
+        url: "{{ helm_download_url }}/{{ helm_archive }}.sha256sum"
+        dest: "{{ helm_tmp.path }}/{{ helm_archive }}.sha256sum"
+        mode: "0644"
+
+    - name: Read expected checksum
+      ansible.builtin.command:
+        cmd: "cat {{ helm_tmp.path }}/{{ helm_archive }}.sha256sum"
+      register: helm_checksum
+      changed_when: false
+
+    - name: Verify downloaded archive
+      ansible.builtin.command:
+        cmd: "sha256sum {{ helm_tmp.path }}/{{ helm_archive }}"
+      register: helm_real_checksum
+      changed_when: false
+
+    - name: Checksum match assertion
+      ansible.builtin.assert:
+        that:
+          - >-
+            helm_real_checksum.stdout.split()[0] == 
+            helm_checksum.stdout.split()[0]
+
+    - name: Extract Help archive
+      ansible.builtin.unarchive:
+        src: "{{ helm_tmp.path }}/{{ helm_archive }}"
+        dest: "{{ helm_tmp.path }}"
+        remote_src: true
+
+    - name: Install Helm executable
+      ansible.builtin.copy:
+        src: "{{ helm_tmp.path }}/{{ helm_platform }}/helm"
+        dest: "{{ helm_install_path }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+  
+  always:
+    - name: Remove temp install directory
+      ansible.builtin.file:
+        path: "{{ helm_tmp.path }}"
+        state: absent
+      when: helm_tmp is defined and helm_tmp.path is defined

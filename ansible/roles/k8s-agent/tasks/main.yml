@@ -1,0 +1,4 @@
+---
+- name: Check worker enrollment prerequisites
+  ansible.builtin.import_tasks: preflight.yml
+
