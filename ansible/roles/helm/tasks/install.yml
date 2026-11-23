@@ -1,0 +1,20 @@
+---
+- name: Install Helm
+  ansible.builtin.apt:
+    name: "helm={{ helm_apt_version }}"
+    state: present
+
+- name: Get Helm version
+  ansible.builtin.command:
+    cmd: helm version --short
+  register: helm_version
+  changed_when: false
+
+- name: Show Helm version
+  ansible.builtin.debug:
+    msg: "Current Helm version: {{ helm_version.stdout }}"
+
+- name: Hold the installed package, without upgrading it
+  ansible.builtin.dpkg_selections:
+    name: helm
+    selection: hold

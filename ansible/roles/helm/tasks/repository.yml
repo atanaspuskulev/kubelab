@@ -1,0 +1,64 @@
+- name: Install prerequisites (if any)
+  ansible.builtin.apt:
+    name:
+      - curl
+      - ca-certificates
+      - gpg
+      - python3-debian
+    state: present
+    update_cache: true
+
+- name: Create APT keyring directory, if not exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download Helm repository signing key
+  ansible.builtin.get_url:
+    url: "{{ helm_apt_gpg_key_url }}"
+    dest: "{{ helm_apt_key_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: helm_key_download
+
+- name: Inspect Helm repository signing key
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --show-keys
+      - --with-colons
+      - "{{ helm_apt_key_path }}"
+  register: helm_key_info
+  changed_when: false
+
+- name: Verify Helm signing key fingerprint
+  ansible.builtin.assert:
+    that: >-
+      helm_apt_key_fingerprint in
+      (helm_key_info.stdout | regex_findall('(?m)^fpr:::::::::([A-F0-9]+):'))
+    fail_msg: "Helm APT signing key fingerprint mismatch!"
+
+- name: Configure Helm APT repository
+  ansible.builtin.deb822_repository:
+    name: helm-stable
+    types:
+      - deb
+    uris:
+      - "{{ helm_apt_url }}"
+    suites:
+      - any
+    components:
+      - main
+    signed_by: "{{ helm_apt_key_path }}"
+    state: present
+    enabled: true
+  register: helm_repository
+
+- name: Update APT cache
+  ansible.builtin.apt:
+    update_cache: true
+  when: helm_repository.changed or helm_key_download.changed
