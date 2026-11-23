@@ -344,3 +344,8 @@ sudo systemctl status kubelet --no-pager
 - Distinguish idempotency evidence from fresh-install and failure-path coverage.
 - Use `ansible-doc`, syntax checks and linting to reduce module parameter and expression errors; runtime validation remains necessary.
 
+## 14. New tasks via the initialization process
+
+As described in doc 04.kubernetes-worker-enrollment.md, there's a step 
+to copy the admin.conf to the VM user to expose it to kubectl. Now, I have
+added this command right after the initialization of the config file via Ansible.

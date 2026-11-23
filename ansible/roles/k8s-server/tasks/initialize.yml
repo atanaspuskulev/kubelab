@@ -20,15 +20,35 @@
   register: kubernetes_etcd_data
 
 - name: Initialize Kubernetes control plane
-  ansible.builtin.command:
-    argv:
-      - kubeadm
-      - init
-      - --config
-      - "{{ kube_kubeadm_config }}"
-    creates: "{{ kube_admin_config }}"
-  when: not kubernetes_admin_conf.stat.exists
+  become: true
+  block:
+    - name: Run kubeadm init
+      ansible.builtin.command:
+        argv:
+          - kubeadm
+          - init
+          - --config
+          - "{{ kube_kubeadm_config }}"
+        creates: "{{ kube_admin_config }}"
+      when: not kubernetes_admin_conf.stat.exists
 
+    - name: Create .kube directory to expose the config to the common VM user
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user }}/.kube"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0700"
+
+    - name: Copy admin.conf into VM user kubeconfig folder
+      ansible.builtin.copy:
+        src: "{{ kube_admin_config }}"
+        dest: "/home/{{ ansible_user }}/.kube/config"
+        remote_src: true
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0600"
+    
 - name: Check Kubernetes API server readiness
   ansible.builtin.command:
     argv:
