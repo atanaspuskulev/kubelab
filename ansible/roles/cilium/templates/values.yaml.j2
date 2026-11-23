@@ -1,0 +1,9 @@
+---
+k8sServiceHost: "{{ kubernetes_api_endpoint }}"
+k8sServicePort: {{ kubernetes_api_port }}
+kubeProxyReplacement: "{{ cilium_kube_proxy_replacement }}"
+ipam:
+  mode: "{{ cilium_ipam_mode }}"
+routingMode: "{{ cilium_routing_mode }}"
+tunnelProtocol: "{{ cilium_tunnel_protocol }}"
+

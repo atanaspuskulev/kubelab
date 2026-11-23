@@ -1,0 +1,13 @@
+---
+- name: Manage Cilium installation
+  environment:
+    KUBECONFIG: "{{ kube_admin_config }}"
+  block:
+    - name: Run Cilium preflight check
+      ansible.builtin.import_tasks: preflight.yml
+    
+    - name: Configure Cilium repository
+      ansible.builtin.import_tasks: repository.yml
+
+    - name: Install Cilium
+      ansible.builtin.import_tasks: install.yml

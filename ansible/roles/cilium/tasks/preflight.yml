@@ -1,0 +1,30 @@
+---
+- name: Check if Cilium is already installed
+  ansible.builtin.command:
+    cmd: helm list -n {{ cilium_namespace }} -o json
+  register: cilium_existing_release
+  changed_when: false
+
+- name: Read Kubernetes server version
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kube_admin_config }}"
+      - version
+      - -o
+      - json
+  register: cilium_k8s_version
+  changed_when: false
+
+- name: Validate Kubernetes compatibility
+  ansible.builtin.assert:
+    that:
+      - >-
+        ((cilium_k8s_version.stdout | from_json).serverVersion.gitVersion
+        | regex_search('^v[0-9]+\.[0-9]+')
+        | regex_replace('^v', ''))
+        in cilium_tested_kubernetes_minor_versions
+    fail_msg: >-
+      Kubernetes version is outside the tested range for Cilium 
+      {{ cilium_chart_version}}.

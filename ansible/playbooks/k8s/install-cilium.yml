@@ -1,0 +1,8 @@
+---
+- name: Prepare Cilium Helm configuration
+  hosts: k8s_servers
+  become: true
+  gather_facts: true
+
+  roles:
+    - cilium

@@ -1,0 +1,13 @@
+---
+- name: Install or update Ciilium
+  kubernetes.core.helm:
+    name: "{{ cilium_release_name }}"
+    chart_ref: cilium/cilium
+    chart_version: "{{ cilium_chart_version }}"
+    release_namespace: "{{ cilium_namespace }}"
+    kubeconfig: "{{ kube_admin_config }}"
+    values_files:
+      - "{{ cilium_values_path }}"
+    state: present
+    wait: false
+    timeout: 10m

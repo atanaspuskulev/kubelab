@@ -1,0 +1,15 @@
+---
+cilium_chart_version: "1.21.0-pre.4"
+cilium_release_name: "cilium"
+cilium_namespace: "kube-system"
+cilium_values_path: "/tmp/cilium-values.yaml"
+cilium_ipam_mode: "kubernetes"
+cilium_routing_mode: "tunnel"
+cilium_tunnel_protocol: "vxlan"
+cilium_kube_proxy_replacement: "false"
+cilium_tested_kubernetes_minor_versions:
+  - "1.37"
+  - "1.33"
+  - "1.34"
+  - "1.35"
+  - "1.36"
